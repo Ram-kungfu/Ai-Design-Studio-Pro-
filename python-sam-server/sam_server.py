@@ -45,5 +45,6 @@ async def split_layers(file: UploadFile = File(...)):
 import os
 
 if __name__ == "__main__":
+    # Render द्वारा दिया गया पोर्ट लें, नहीं तो 10000 इस्तेमाल करें
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run(app, host="0.0.0.0", port=port)
