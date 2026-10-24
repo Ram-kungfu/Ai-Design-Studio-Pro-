@@ -1,1 +1,101 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Design Studio Pro</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="topbar">
+  <div class="logo">🎨 AI Design Studio (Pro)</div>
+  <div class="tag">Cutout · Layers · Vector · AI</div>
+</header>
 
+<main class="container">
+  <section class="card">
+    <h2>1️⃣ डिज़ाइन/फोटो अपलोड करें</h2>
+    <div class="dropzone" id="dropzone">
+      <input type="file" id="fileInput" accept="image/*" hidden />
+      <p id="dropText">📸 यहाँ क्लिक करें या ड्रैग करें</p>
+      <img id="previewImg" class="hidden" />
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2️⃣ सेटिंग्स</h2>
+    <div class="grid-2">
+      <div>
+        <label>नाम / टेक्स्ट:</label>
+        <input type="text" id="nameInput" placeholder="e.g. RAHUL" />
+      </div>
+      <div>
+        <label>साइज़:</label>
+        <select id="aspectSelect">
+          <option value="2:3">T-Shirt (2:3)</option>
+          <option value="1:1">Square (1:1)</option>
+          <option value="3:2">Poster (3:2)</option>
+        </select>
+      </div>
+    </div>
+    <label>AI बैकग्राउंड प्रॉम्प्ट:</label>
+    <textarea id="promptInput" rows="2" placeholder="gold luxury background"></textarea>
+  </section>
+
+  <section class="card">
+    <h2>3️⃣ AI टूल्स</h2>
+    <div class="tabs">
+      <button class="tab-btn active" onclick="openTab('tab-auto', this)">🚀 FULL AUTO</button>
+      <button class="tab-btn" onclick="openTab('tab-layers', this)">🧩 लेयर + वेक्टर</button>
+      <button class="tab-btn" onclick="openTab('tab-variations', this)">✨ 4 ऑटो डिज़ाइन</button>
+      <button class="tab-btn" onclick="openTab('tab-vector', this)">📐 सिर्फ वेक्टर</button>
+      <button class="tab-btn" onclick="openTab('tab-cut', this)">✂️ सिर्फ कटिंग</button>
+      <button class="tab-btn" onclick="openTab('tab-hd', this)">🔼 सिर्फ HD</button>
+    </div>
+
+    <div id="tab-auto" class="tab-content active">
+      <p class="hint">सब कुछ एक साथ (कटिंग + HD + BG + नाम)</p>
+      <button class="btn primary large" onclick="runAuto()">🚀 FULL AUTO चलाएँ</button>
+    </div>
+
+    <div id="tab-layers" class="tab-content">
+      <p class="hint">पहले लेयर अलग करेगा, फिर उन्हें वेक्टर करेगा</p>
+      <button class="btn primary" onclick="runSplitAndTrace()">🧩 लेयर + वेक्टर करें</button>
+      <div id="layerResults" class="result-grid" style="margin-top: 15px;"></div>
+    </div>
+
+    <div id="tab-variations" class="tab-content">
+      <p class="hint">4 अलग-अलग प्रीमियम लुक बनाएँ</p>
+      <button class="btn primary" onclick="runVariations()">✨ 4 डिज़ाइन बनाएँ</button>
+    </div>
+
+    <div id="tab-vector" class="tab-content">
+      <p class="hint">डिज़ाइन को ट्रेस करके PDF बनाएँ</p>
+      <button class="btn" onclick="runVector()">📐 वेक्टर बनाएँ</button>
+    </div>
+
+    <div id="tab-cut" class="tab-content">
+      <p class="hint">बैकग्राउंड हटाएँ</p>
+      <button class="btn" onclick="runCutout()">✂️ कटिंग करें</button>
+    </div>
+
+    <div id="tab-hd" class="tab-content">
+      <p class="hint">HD (4K) क्वालिटी बनाएँ</p>
+      <button class="btn" onclick="runUpscale()">🔼 HD बनाएँ</button>
+    </div>
+  </section>
+
+  <section class="card" id="resultCard">
+    <h2>4️⃣ नतीजा (Results)</h2>
+    <div id="statusBar" class="status">तैयार...</div>
+    <div id="resultGrid" class="result-grid"></div>
+    <div id="downloadBar" class="download-bar hidden">
+      <a id="downloadFull" class="btn primary" download>⬇️ Final (बिना Watermark)</a>
+      <a id="downloadPreview" class="btn" download>⬇️ Preview (Watermark)</a>
+    </div>
+  </section>
+</main>
+<footer><p>© AI Design Studio Pro</p></footer>
+<script src="script.js"></script>
+</body>
+</html>
