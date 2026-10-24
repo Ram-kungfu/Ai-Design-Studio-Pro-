@@ -151,26 +151,32 @@ async function addWatermark(buffer, text = "PREVIEW - AI DESIGN STUDIO") {
   } catch (e) { return buffer; }
 }
 
-// 7. SAM Layer Splitter (Smart Divide)
-async function splitIntoLayers(buffer) {
-  const meta = await sharp(buffer).metadata();
-  const W = meta.width, H = meta.height;
-  const layersBuf = [];
-  
-  // डिज़ाइन को 4 हिस्सों में बांटें
-  const regions = [
-    { left: 0, top: 0, width: Math.floor(W/2), height: Math.floor(H/2) },
-    { left: Math.floor(W/2), top: 0, width: Math.floor(W/2), height: Math.floor(H/2) },
-    { left: 0, top: Math.floor(H/2), width: Math.floor(W/2), height: Math.floor(H/2) },
-    { left: Math.floor(W/2), top: Math.floor(H/2), width: Math.floor(W/2), height: Math.floor(H/2) }
-  ];
-
-  for (const r of regions) {
-    let part = await sharp(buffer).extract(r).png().toBuffer();
-    try { part = await callRemoveBgAPI(part, false); } catch(e) {}
-    layersBuf.push(part);
+// =====================================================================
+// 🔥 7. NEW: Python SAM Server से लेयर्स लाना
+// =====================================================================
+async function splitIntoLayersUsingPython(buffer) {
+  try {
+    const fd = new FormData();
+    fd.append('file', buffer, { filename: 'design.png' });
+    
+    const PYTHON_SAM_URL = process.env.SAM_SERVER_URL || 'http://localhost:8000/split-layers';
+    console.log("⏳ Python SAM सर्वर से लेयर्स माँग रहे हैं...");
+    
+    const r = await axios.post(PYTHON_SAM_URL, fd, {
+      headers: { ...fd.getHeaders() },
+      timeout: 300000 // 5 मिनट
+    });
+    
+    if (!r.data.success) throw new Error(r.data.error || "SAM failed");
+    
+    // Base64 लेयर्स को Buffer में बदलें
+    const layerBuffers = r.data.layers.map(base64Str => Buffer.from(base64Str, 'base64'));
+    console.log(`✅ SAM से ${layerBuffers.length} लेयर्स मिल गईं!`);
+    return layerBuffers;
+  } catch (e) {
+    console.error("❌ SAM सर्वर एरर:", e.message);
+    throw new Error("SAM सर्वर से कनेक्ट नहीं हो पाया। क्या Python सर्वर चालू है?");
   }
-  return layersBuf;
 }
 
 function saveOut(buf, prefix, ext = 'png') {
@@ -209,13 +215,21 @@ app.post('/api/auto', upload.single('image'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 2. SPLIT + TRACE (लाइब्रेरी अलग + वेक्टर)
+// 2. SPLIT + TRACE (Python SAM + Vectorizer)
 app.post('/api/split-and-trace', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
-    const rawLayers = await splitIntoLayers(buf);
-    const results = [];
+    
+    // Step 1: Python SAM से लेयर्स अलग करवाएं
+    const rawLayers = await splitIntoLayersUsingPython(buf);
+    
+    if (rawLayers.length === 0) {
+      throw new Error("SAM कोई भी लेयर नहीं बना पाया।");
+    }
 
+    const results = [];
+    
+    // Step 2: हर लेयर को Vectorizer से ट्रेस करें और Watermark लगाएँ
     for (let i = 0; i < rawLayers.length; i++) {
       const layerBuf = rawLayers[i];
       const wmPng = await addWatermark(layerBuf);
@@ -225,13 +239,15 @@ app.post('/api/split-and-trace', upload.single('image'), async (req, res) => {
       try {
         const vectorBuf = await callVectorizerAPI(layerBuf);
         vectorPdf = saveOut(vectorBuf, `vector_layer_${i+1}`, 'pdf');
-      } catch (e) {}
+      } catch (e) {
+        console.warn(`Layer ${i+1} vector failed.`);
+      }
 
       results.push({ layerNumber: i + 1, previewPng, vectorPdf });
     }
 
     fs.unlinkSync(req.file.path);
-    res.json({ success: true, results });
+    res.json({ success: true, total: results.length, results });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
