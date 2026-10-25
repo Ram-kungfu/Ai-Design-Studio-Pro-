@@ -453,11 +453,12 @@ async function runSplitAndTrace() {
 }
 
 // ==========================================
-// 3. VARIATIONS (4 डिज़ाइन)
+// 3. VARIATIONS (4 डिज़ाइन) - 🔥 यहाँ नया कोड जोड़ दिया गया है
 // ==========================================
 async function runVariations() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('4 नए डिज़ाइन बन रहे हैं...'); toggleButtons(true);
+  clearGrid(); setStatus('4 नए डिज़ाइन बन रहे हैं (इसमें 15-20 सेकंड लग सकते हैं)...'); toggleButtons(true);
+  
   const fd = new FormData();
   fd.append('image', currentFile);
   fd.append('name', $('nameInput').value);
@@ -466,9 +467,19 @@ async function runVariations() {
   try {
     const r = await fetch('/api/variations', { method: 'POST', body: fd });
     const data = await r.json();
+    
     if (data.error) throw new Error(data.error);
-    data.variations.forEach((url, i) => showThumb(url, `✨ डिज़ाइन ${i + 1}`));
-    setStatus('✅ 4 डिज़ाइन तैयार!', 'ok');
+    
+    // 🔥 यहाँ हम चेक करेंगे कि सर्वर से कितने डिज़ाइन आए हैं
+    if (data.variations && data.variations.length > 0) {
+      data.variations.forEach((url, i) => {
+        showThumb(url, `✨ डिज़ाइन ${i + 1}`);
+      });
+      setStatus(`✅ ${data.variations.length} डिज़ाइन तैयार!`, 'ok');
+    } else {
+      setStatus('❌ कोई डिज़ाइन नहीं बन पाया, फिर से कोशिश करें।', 'err');
+    }
+    
   } catch (e) {
     setStatus('❌ ' + e.message, 'err');
   } finally {
