@@ -116,7 +116,7 @@ async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
         }
       };
       
-      const r = await axios.post(`${GEM_URL}gemini-3-image:generateContent`, payload, {
+      const r = await axios.post(`${GEM_URL}gemini-3.1 flash-image:generateContent`, payload, {
         headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' }, timeout: 180000
       });
       
