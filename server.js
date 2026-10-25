@@ -132,7 +132,7 @@ async function generateStylishText(text, style = '3D golden') {
     throw new Error("AI ने कोई टेक्स्ट इमेज नहीं दी");
   } catch (e) {
     console.error("Stylish Text Error:", e.message);
-    return null;
+    return null; // Fallback के लिए null भेजेगा
   }
 }
 
@@ -149,7 +149,7 @@ function buildFullCirclePath(text, fontSizePx, centerX, centerY) {
   };
 }
 
-// 6. Compose (Auto के लिए)
+// 6. Compose (Auto के लिए - अब 100% क्रैश-फ्री)
 async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null, curveVal = 0, angleVal = 0, textColor = '#ffffff', fontSizeVal = 10, boldVal = 'normal', italicVal = 'normal', textStyle = 'normal', fontFamilyVal = 'Arial, sans-serif') {
   let W, H;
   if (customW && customH) {
@@ -172,27 +172,35 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
   const y = Math.floor((H - targetH) / 2 + H * 0.05);
   let composed = await sharp(bgCanvas).composite([{ input: cutResized, left: x, top: y }]).png().toBuffer();
 
-  // 3D टेक्स्ट (AI द्वारा बनाया गया)
+  // 🔥 3D टेक्स्ट (AI द्वारा बनाया गया)
   if (textImageBuf) {
-    const textResized = await sharp(textImageBuf).resize({ width: Math.floor(W * 0.7) }).png().toBuffer();
-    const textMeta = await sharp(textResized).metadata();
-    const tx = Math.floor((W - textMeta.width) / 2);
-    const ty = Math.floor(H * 0.15);
-    composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
+    try {
+      const textResized = await sharp(textImageBuf).resize({ width: Math.floor(W * 0.7) }).png().toBuffer();
+      const textMeta = await sharp(textResized).metadata();
+      const tx = Math.floor((W - textMeta.width) / 2);
+      const ty = Math.floor(H * 0.15);
+      composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
+    } catch (err) {
+      console.error("3D Text Compose Failed, skipping...");
+      textImageBuf = null; // फेल होने पर null कर दें ताकि नीचे वाला सामान्य टेक्स्ट चल जाए
+    }
   }
-  // सिंपल टेक्स्ट
-  else if (name) {
+  
+  // सिंपल टेक्स्ट (अगर 3D नहीं बना या नहीं माँगा गया)
+  if (!textImageBuf && name) {
     let fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100));
+    if (isNaN(fs2) || fs2 < 10) fs2 = 100; // Safety
+
     const pxX = W / 2;
     const pxY = H * 0.25;   
 
-    // 🔥 Auto-Fit (साइज़ छोटा करना ताकि बाहर न जाए)
+    // Auto-Fit (साइज़ छोटा करना ताकि बाहर न जाए)
     const maxWidth = W * 0.9;
     let estWidth = name.length * fs2 * 0.6;
     if (estWidth > maxWidth) fs2 = Math.floor(fs2 * (maxWidth / estWidth));
 
     let pathD = "";
-    const curve = parseFloat(curveVal);
+    const curve = parseFloat(curveVal) || 0;
     const uniqueId = "path_" + Date.now();
     let extraTransform = "";
 
@@ -204,7 +212,6 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
       const circle = buildFullCirclePath(name, fs2, pxX, pxY);
       pathD = circle.path;
     } else if (textStyle === 'round') {
-      // 🔥 Round फिक्स: सीधा ऊपर की तरफ
       const controlY = pxY - (50 * 3); 
       const startX = pxX - 200;
       const endX = pxX + 200;
@@ -460,6 +467,7 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
     const pxY = Math.floor((parseFloat(textY) / 100) * H);
     
     let fs2 = Math.floor(H * (parseFloat(fontSize) / 100));
+    if (isNaN(fs2) || fs2 < 10) fs2 = 100;
 
     // 🔥 Auto-Fit (साइज़ छोटा करना ताकि बॉक्स से बाहर न जाए)
     const maxWidth = W * 0.9;
@@ -472,7 +480,6 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
     let svgText = "";
 
     if (textStyle === 'vertical') {
-      // खड़ा (Vertical)
       svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
         <text x="${pxX}" y="${pxY}" text-anchor="middle" font-family="${fontFamily}" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" transform="rotate(90 ${pxX} ${pxY})">${name}</text>
       </svg>`;
@@ -489,7 +496,6 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
         const circle = buildFullCirclePath(name, fs2, pxX, pxY);
         pathD = circle.path;
       } else if (textStyle === 'round') {
-        // 🔥 Round फिक्स: सीधा ऊपर की तरफ
         const controlY = pxY - (50 * 3); 
         pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
       } else if (textStyle === 'rotate') {
