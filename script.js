@@ -379,11 +379,46 @@ function setStatus(msg, type = '') {
   bar.innerHTML = (type === '' ? '<span class="spinner"></span>' : '') + msg;
 }
 
+// 🔥 showThumb में डाउनलोड और शेयर का बटन जोड़ दिया गया है
 function showThumb(url, label) {
   const div = document.createElement('div');
   div.className = 'thumb';
-  div.innerHTML = `<a href="${url}" target="_blank"><img src="${url}" /></a><p>${label}</p>`;
+  div.innerHTML = `
+    <a href="${url}" target="_blank"><img src="${url}" /></a>
+    <p>${label}</p>
+    <div style="display: flex; gap: 5px; margin-top: 8px;">
+      <a href="${url}" download class="btn small primary" style="flex: 1; text-align: center; font-size: 12px; padding: 8px;">⬇️ डाउनलोड</a>
+      <button onclick="shareImage('${url}')" class="btn small" style="flex: 1; background: #3b82f6; color: white; font-size: 12px; padding: 8px;">📤 शेयर</button>
+    </div>
+  `;
   $('resultGrid').appendChild(div);
+}
+
+// 🔥 शेयर करने का फंक्शन (नया जोड़ा गया है)
+async function shareImage(url) {
+  try {
+    // इमेज को फेच करके फाइल में बदलें
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const file = new File([blob], 'design.png', { type: blob.type });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: 'AI Design Studio',
+        text: 'मेरा AI डिज़ाइन देखिए!'
+      });
+    } else {
+      // अगर शेयर सपोर्ट नहीं है तो डाउनलोड कर दें
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'design.png';
+      a.click();
+    }
+  } catch (error) {
+    console.log('शेयर करने में समस्या:', error);
+    alert('इमेज शेयर नहीं हो पाई, कृपया डाउनलोड करें।');
+  }
 }
 
 function clearGrid() {
