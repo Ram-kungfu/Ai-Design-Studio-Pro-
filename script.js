@@ -30,7 +30,12 @@ function handleFile(file) {
   reader.onload = ev => {
     previewImg.src = ev.target.result;
     previewImg.classList.remove('hidden');
-    $('editorBg').src = ev.target.result; // एडिटर में इमेज दिखाएँ
+    
+    // एडिटर में इमेज दिखाएँ
+    const editorBg = $('editorBg');
+    editorBg.src = ev.target.result;
+    editorBg.style.display = 'block'; 
+    
     dropText.textContent = `✅ ${file.name}`;
   };
   reader.readAsDataURL(file);
@@ -70,7 +75,7 @@ if (draggableText && editorContainer) {
   });
 }
 
-// एडिटर में टेक्स्ट अपडेट करें
+// एडिटर में टेक्स्ट अपडेट करें (Horizontal सहित)
 function updateEditorText() {
   if (!draggableText) return;
   const name = $('nameInput').value || 'RAHUL';
@@ -86,6 +91,7 @@ function updateEditorText() {
     draggableText.style.writingMode = 'vertical-rl';
     draggableText.style.transform = 'translate(-50%, -50%)';
   } else {
+    // Normal और Horizontal दोनों के लिए सीधा रहेगा
     draggableText.style.writingMode = 'horizontal-tb';
     draggableText.style.transform = 'translate(-50%, -50%)';
   }
