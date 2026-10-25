@@ -136,7 +136,7 @@ async function generateStylishText(text, style = '3D golden') {
   }
 }
 
-// 6. Compose (सभी नए फीचर्स के साथ)
+// 6. Compose (WordArt Curve के साथ सभी फीचर्स)
 async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null, curveVal = 0, angleVal = 0, textColor = '#ffffff', fontSizeVal = 10, boldVal = 'normal', italicVal = 'normal') {
   let W, H;
   if (customW && customH) {
@@ -167,7 +167,6 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
   } 
   else if (name) {
-    // फॉन्ट साइज को % से पिक्सल में बदलें
     const fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100)); 
     const pxX = W / 2;
     const pxY = H * 0.15;
@@ -179,6 +178,7 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     let pathD = "";
     const curve = parseFloat(curveVal);
     
+    // 🔥 WordArt Curve Logic (Server Side)
     if (curve === 0) {
       pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
     } else {
@@ -410,7 +410,7 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
   }
 });
 
-// 9. MANUAL TEXT PLACEMENT (सभी स्टाइल्स के साथ)
+// 9. MANUAL TEXT PLACEMENT (WordArt Curve के साथ)
 app.post('/api/manual-text', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
@@ -430,7 +430,6 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
     let svgText = "";
 
     if (textStyle === 'vertical') {
-      // खड़ा (Vertical)
       svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
         <text x="${pxX}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="${Math.max(2, Math.floor(fs2/20))}" transform="rotate(90 ${pxX} ${pxY})">${name}</text>
       </svg>`;
@@ -441,15 +440,13 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
       let pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
       
       const curveFloat = parseFloat(curve);
+      
+      // 🔥 WordArt Curve Logic
       if (textStyle === 'round') {
-        // गोल (Round)
-        const r = textLength / 2;
-        pathD = `M ${startX} ${pxY + r/2} A ${r} ${r} 0 0 1 ${endX} ${pxY + r/2}`;
-      } else if (textStyle === 'rotate') {
-        // तिरछा (Rotate)
-        finalTransform = `rotate(45 ${pxX} ${pxY})`; 
+        // गोल (Arc) - Quadratic Curve
+        const controlY = pxY - (50 * 3); // Fixed curve for 'round' style
+        pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
       } else if (curveFloat !== 0) {
-        // कर्व स्लाइडर (Curve)
         const controlY = pxY - (curveFloat * 3);
         pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
       }
