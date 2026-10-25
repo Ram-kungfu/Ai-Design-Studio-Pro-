@@ -107,10 +107,47 @@ async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
   }
 }
 
-// 5. Compose (Background + Cutout + Name)
-async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name) {
-  const sizeMap = { '2:3': [2000, 3000], '1:1': [2400, 2400], '3:2': [3000, 2000] };
-  const [W, H] = sizeMap[aspect] || sizeMap['2:3'];
+// 🔥 5. NEW: 3D स्टाइलिश टेक्स्ट बनाना
+async function generateStylishText(text, style = '3D golden') {
+  try {
+    const prompt = `Generate a beautiful, high quality, transparent PNG (no background) of the text "${text}" written in ${style} font style. Make it look premium, 3D, and print-ready. The text should be perfectly aligned and centered.`;
+    
+    const payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+    };
+    
+    const r = await axios.post(`${GEM_URL}gemini-3.1-flash-image:generateContent`, payload, {
+      headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' }, timeout: 180000
+    });
+
+    for (const cand of r.data.candidates || []) {
+      for (const part of cand.content?.parts || []) {
+        const inl = part.inlineData || part.inline_data;
+        if (inl?.data) {
+          return Buffer.from(inl.data, 'base64');
+        }
+      }
+    }
+    throw new Error("AI ने कोई टेक्स्ट इमेज नहीं दी");
+  } catch (e) {
+    console.error("Stylish Text Error:", e.message);
+    // Fallback: अगर AI फेल हो जाए तो सिंपल टेक्स्ट लौटा दें
+    return null;
+  }
+}
+
+// 6. Compose (Background + Cutout + Name/3D Text + Custom Size)
+async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null) {
+  let W, H;
+  // कस्टम साइज़ चेक
+  if (customW && customH) {
+    W = parseInt(customW);
+    H = parseInt(customH);
+  } else {
+    const sizeMap = { '2:3': [2000, 3000], '1:1': [2400, 2400], '3:2': [3000, 2000] };
+    [W, H] = sizeMap[aspect] || sizeMap['2:3'];
+  }
 
   let bgCanvas = bgBuf ? await sharp(bgBuf).resize(W, H, { fit: 'cover', position: 'center' }).toBuffer()
     : await sharp({ create: { width: W, height: H, channels: 3, background: '#ffffff' } }).png().toBuffer();
@@ -124,17 +161,28 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name) {
   const y = Math.floor((H - targetH) / 2 + H * 0.05);
   let composed = await sharp(bgCanvas).composite([{ input: cutResized, left: x, top: y }]).png().toBuffer();
 
-  if (name) {
+  // अगर AI से बना 3D टेक्स्ट है
+  if (textImageBuf) {
+    const textResized = await sharp(textImageBuf).resize({ width: Math.floor(W * 0.7) }).png().toBuffer();
+    const textMeta = await sharp(textResized).metadata();
+    const tx = Math.floor((W - textMeta.width) / 2);
+    const ty = Math.floor(H * 0.15); // ऊपर की तरफ
+    
+    composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
+  } 
+  // अगर सिंपल टेक्स्ट है (पुराना तरीका)
+  else if (name) {
     const fs2 = Math.floor(H * 0.09);
     const svgText = `<svg width="${W}" height="${fs2 + 80}" xmlns="http://www.w3.org/2000/svg">
       <text x="${W/2}" y="${fs2 + 30}" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="${fs2}" fill="white" stroke="black" stroke-width="4">${name}</text>
     </svg>`;
     composed = await sharp(composed).composite([{ input: Buffer.from(svgText), top: 30, left: 0 }]).png().toBuffer();
   }
+  
   return composed;
 }
 
-// 6. Watermark
+// 7. Watermark
 async function addWatermark(buffer, text = "PREVIEW - AI DESIGN STUDIO") {
   try {
     const meta = await sharp(buffer).metadata();
@@ -151,9 +199,7 @@ async function addWatermark(buffer, text = "PREVIEW - AI DESIGN STUDIO") {
   } catch (e) { return buffer; }
 }
 
-// =====================================================================
-// 🔥 7. NEW: Python SAM Server से लेयर्स लाना
-// =====================================================================
+// 8. Python SAM Server से लेयर्स लाना
 async function splitIntoLayersUsingPython(buffer) {
   try {
     const fd = new FormData();
@@ -164,12 +210,11 @@ async function splitIntoLayersUsingPython(buffer) {
     
     const r = await axios.post(PYTHON_SAM_URL, fd, {
       headers: { ...fd.getHeaders() },
-      timeout: 300000 // 5 मिनट
+      timeout: 300000
     });
     
     if (!r.data.success) throw new Error(r.data.error || "SAM failed");
     
-    // Base64 लेयर्स को Buffer में बदलें
     const layerBuffers = r.data.layers.map(base64Str => Buffer.from(base64Str, 'base64'));
     console.log(`✅ SAM से ${layerBuffers.length} लेयर्स मिल गईं!`);
     return layerBuffers;
@@ -187,10 +232,10 @@ function saveOut(buf, prefix, ext = 'png') {
 
 // ================= API ROUTES =================
 
-// 1. FULL AUTO
+// 1. FULL AUTO (अब 3D टेक्स्ट और कस्टम साइज़ के साथ)
 app.post('/api/auto', upload.single('image'), async (req, res) => {
   try {
-    const { prompt = '', name = '', aspect = '2:3' } = req.body;
+    const { prompt = '', name = '', aspect = '2:3', customW, customH, use3d = 'false' } = req.body;
     const inputBuf = fs.readFileSync(req.file.path);
     const steps = {};
 
@@ -206,7 +251,13 @@ app.post('/api/auto', upload.single('image'), async (req, res) => {
     try { bg = await callRecraftStabilityAPI(prompt, aspect); } catch (e) {}
     if (bg) steps.bgPreview = saveOut(bg, 'bg');
 
-    const final = await callKittlComposeAPI(bg, hd, aspect, name);
+    // 3D टेक्स्ट चेक
+    let textImg = null;
+    if (name && use3d === 'true') {
+      textImg = await generateStylishText(name);
+    }
+
+    const final = await callKittlComposeAPI(bg, hd, aspect, name, textImg, customW, customH);
     steps.finalPreview = saveOut(await addWatermark(final), 'final_wm');
     steps.finalRaw = saveOut(final, 'final');
 
@@ -219,8 +270,6 @@ app.post('/api/auto', upload.single('image'), async (req, res) => {
 app.post('/api/split-and-trace', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
-    
-    // Step 1: Python SAM से लेयर्स अलग करवाएं
     const rawLayers = await splitIntoLayersUsingPython(buf);
     
     if (rawLayers.length === 0) {
@@ -228,8 +277,6 @@ app.post('/api/split-and-trace', upload.single('image'), async (req, res) => {
     }
 
     const results = [];
-    
-    // Step 2: हर लेयर को Vectorizer से ट्रेस करें और Watermark लगाएँ
     for (let i = 0; i < rawLayers.length; i++) {
       const layerBuf = rawLayers[i];
       const wmPng = await addWatermark(layerBuf);
@@ -239,9 +286,7 @@ app.post('/api/split-and-trace', upload.single('image'), async (req, res) => {
       try {
         const vectorBuf = await callVectorizerAPI(layerBuf);
         vectorPdf = saveOut(vectorBuf, `vector_layer_${i+1}`, 'pdf');
-      } catch (e) {
-        console.warn(`Layer ${i+1} vector failed.`);
-      }
+      } catch (e) {}
 
       results.push({ layerNumber: i + 1, previewPng, vectorPdf });
     }
@@ -321,6 +366,30 @@ app.post('/api/variations', upload.single('image'), async (req, res) => {
     fs.unlinkSync(req.file.path);
     res.json({ success: true, variations });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 🔥 8. NEW: 3D TEXT ONLY ROUTE
+app.post('/api/3d-text', upload.single('image'), async (req, res) => {
+  try {
+    const buf = fs.readFileSync(req.file.path);
+    const { name = '', style = '3D golden', aspect = '2:3', customW, customH } = req.body;
+    
+    if (!name) throw new Error("कृपया नाम लिखें");
+
+    const textImgBuf = await generateStylishText(name, style);
+    if (!textImgBuf) throw new Error("3D टेक्स्ट नहीं बन पाया।");
+
+    const finalDesign = await callKittlComposeAPI(null, buf, aspect, null, textImgBuf, customW, customH);
+    const wmDesign = await addWatermark(finalDesign);
+    
+    const finalPreview = saveOut(wmDesign, '3d_design_wm');
+    const finalRaw = saveOut(finalDesign, '3d_design_raw');
+
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, finalPreview, finalRaw });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ✅ Serve HTML
