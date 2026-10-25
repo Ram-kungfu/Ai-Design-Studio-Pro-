@@ -1,3 +1,29 @@
+// 🔥 नया फंक्शन (बिना SAM के - फ्री तरीका)
+async function runDirectVector() {
+  if (!currentFile) return alert('फ़ोटो अपलोड करें');
+  clearGrid(); setStatus('सीधा कट + वेक्टर बन रहा है...'); toggleButtons(true);
+  const fd = new FormData(); 
+  fd.append('image', currentFile);
+  
+  try {
+    const r = await fetch('/api/direct-vector', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    
+    const grid = $('layerResults');
+    data.results.forEach(res => {
+      // 🔥 यहाँ नए थंब कार्ड फंक्शन का इस्तेमाल किया गया है ताकि सारे बटन आ जाएँ
+      const div = createThumbCard(res.previewPng, res.previewPng, res.vectorPdf, 'कट + वेक्टर', true);
+      grid.appendChild(div);
+    });
+    setStatus('✅ कट + वेक्टर तैयार!', 'ok');
+  } catch (e) { 
+    setStatus('❌ ' + e.message, 'err'); 
+  } finally { 
+    toggleButtons(false); 
+  }
+}
+
 const $ = id => document.getElementById(id);
 let currentFile = null;
 
@@ -365,7 +391,9 @@ function applyManualText() {
     .then(r => r.json())
     .then(data => {
       if (data.error) throw new Error(data.error);
-      showThumb(data.preview, '✅ टेक्स्ट सेट हो गया');
+      // 🔥 यहाँ नए कार्ड फंक्शन का इस्तेमाल हुआ है
+      const div = createThumbCard(data.preview, data.finalRaw, null, '✅ टेक्स्ट सेट हो गया', false);
+      $('resultGrid').appendChild(div);
       setStatus('✅ तैयार!', 'ok');
     })
     .catch(e => setStatus('❌ ' + e.message, 'err'))
@@ -379,18 +407,31 @@ function setStatus(msg, type = '') {
   bar.innerHTML = (type === '' ? '<span class="spinner"></span>' : '') + msg;
 }
 
-// 🔥 showThumb में डाउनलोड और शेयर का बटन जोड़ दिया गया है
-function showThumb(url, label) {
+// 🔥 नया थंब कार्ड बनाने वाला फंक्शन (सारे बटन एक साथ)
+function createThumbCard(wmUrl, rawUrl, pdfUrl, label, isVector = false) {
   const div = document.createElement('div');
   div.className = 'thumb';
-  div.innerHTML = `
-    <a href="${url}" target="_blank"><img src="${url}" /></a>
-    <p>${label}</p>
-    <div style="display: flex; gap: 5px; margin-top: 8px;">
-      <a href="${url}" download class="btn small primary" style="flex: 1; text-align: center; font-size: 12px; padding: 8px;">⬇️ डाउनलोड</a>
-      <button onclick="shareImage('${url}')" class="btn small" style="flex: 1; background: #3b82f6; color: white; font-size: 12px; padding: 8px;">📤 शेयर</button>
+  
+  let buttonsHtml = `
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px;">
+      <a href="${wmUrl}" download class="btn small" style="text-align: center; font-size: 11px; padding: 6px; background: #475569;">⬇️ Watermark</a>
+      ${rawUrl ? `<a href="${rawUrl}" download class="btn small primary" style="text-align: center; font-size: 11px; padding: 6px; background: #fbbf24; color: #000;">⬇️ बिना WM</a>` : ''}
+      <button onclick="shareImage('${rawUrl || wmUrl}')" class="btn small" style="text-align: center; font-size: 11px; padding: 6px; background: #3b82f6;">📤 शेयर</button>
+      ${isVector && pdfUrl ? `<a href="${pdfUrl}" download class="btn small primary" style="text-align: center; font-size: 11px; padding: 6px; background: #10b981; color: #fff;">⬇️ PDF</a>` : ''}
     </div>
   `;
+
+  div.innerHTML = `
+    <a href="${wmUrl}" target="_blank"><img src="${wmUrl}" /></a>
+    <p>${label}</p>
+    ${buttonsHtml}
+  `;
+  return div;
+}
+
+// 🔥 पुराने showThumb को अपडेट कर दिया गया है ताकि यह नए कार्ड फंक्शन का इस्तेमाल करे
+function showThumb(url, label) {
+  const div = createThumbCard(url, null, null, label, false);
   $('resultGrid').appendChild(div);
 }
 
@@ -462,7 +503,11 @@ async function runAuto() {
     if (data.error) throw new Error(data.error);
 
     if (data.steps.cutPreview) showThumb(data.steps.cutPreview, '✂️ कटआउट');
-    if (data.steps.finalPreview) showThumb(data.steps.finalPreview, '✅ Final');
+    if (data.steps.finalPreview) {
+      // 🔥 यहाँ नए कार्ड फंक्शन का इस्तेमाल हुआ है ताकि दोनों डाउनलोड बटन आ जाएँ
+      const div = createThumbCard(data.steps.finalPreview, data.steps.finalRaw, null, '✅ Final', false);
+      $('resultGrid').appendChild(div);
+    }
 
     $('downloadFull').href = data.steps.finalRaw;
     $('downloadPreview').href = data.steps.finalPreview;
@@ -488,14 +533,8 @@ async function runSplitAndTrace() {
     if (data.error) throw new Error(data.error);
     const grid = $('layerResults');
     data.results.forEach(res => {
-      const div = document.createElement('div');
-      div.className = 'thumb';
-      div.innerHTML = `
-        <img src="${res.previewPng}" />
-        <p><b>लेयर ${res.layerNumber}</b></p>
-        <a href="${res.previewPng}" class="btn small" download>⬇️ Watermark</a>
-        ${res.vectorPdf ? `<a href="${res.vectorPdf}" class="btn primary small" download>⬇️ Vector PDF</a>` : ''}
-      `;
+      // 🔥 यहाँ नए कार्ड फंक्शन का इस्तेमाल हुआ है
+      const div = createThumbCard(res.previewPng, res.previewPng, res.vectorPdf, `लेयर ${res.layerNumber}`, true);
       grid.appendChild(div);
     });
     setStatus('✅ लेयर्स तैयार!', 'ok');
