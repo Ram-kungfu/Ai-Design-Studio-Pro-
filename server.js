@@ -137,25 +137,20 @@ async function generateStylishText(text, style = '3D golden') {
 }
 
 // ================= 🔥 HELPER: DYNAMIC FULL CIRCLE PATH =================
-// यह function शब्द की लंबाई के हिसाब से radius निकालता है।
-// छोटा शब्द → छोटा गोला, बड़ा शब्द → बड़ा गोला (अपने आप fit)।
-// कोई जबरदस्ती minimum floor नहीं, सिर्फ safety के लिए 10px।
 function buildFullCirclePath(text, fontSizePx, centerX, centerY) {
   const textWidth = text.length * fontSizePx * 0.6;   // approx text width in px
-  // Circumference = 2πr  =>  r = textWidth / (2π)
   let r = textWidth / (2 * Math.PI);
   if (r < 10) r = 10; // safety only — 1-2 अक्षर पर path degenerate न हो
   const top = centerY - r;
   const bottom = centerY + r;
-  // Do arcs around center (full circle)
   return {
     radius: r,
     path: `M ${centerX} ${top} A ${r} ${r} 0 1 1 ${centerX} ${bottom} A ${r} ${r} 0 1 1 ${centerX} ${top}`
   };
 }
 
-// 6. Compose (सभी नए फीचर्स के साथ - WordArt Curve, Full Circle, RGB, Bold, Italic, Font Size)
-async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null, curveVal = 0, angleVal = 0, textColor = '#ffffff', fontSizeVal = 10, boldVal = 'normal', italicVal = 'normal', textStyle = 'normal') {
+// 6. Compose (Auto के लिए)
+async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null, curveVal = 0, angleVal = 0, textColor = '#ffffff', fontSizeVal = 10, boldVal = 'normal', italicVal = 'normal', textStyle = 'normal', fontFamilyVal = 'Arial, sans-serif') {
   let W, H;
   if (customW && customH) {
     W = parseInt(customW);
@@ -185,18 +180,17 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     const ty = Math.floor(H * 0.15);
     composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
   }
-  // सिंपल टेक्स्ट (WordArt Curve, Full Circle, Angle, Color, Bold, Italic के साथ)
+  // सिंपल टेक्स्ट
   else if (name) {
     const fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100));
     const pxX = W / 2;
-    const pxY = H * 0.25;   // 🔥 गोला बनाने के लिए center थोड़ा नीचे, ताकि पूरा गोला canvas में fit हो
+    const pxY = H * 0.25;   
 
     let pathD = "";
     const curve = parseFloat(curveVal);
     const uniqueId = "path_" + Date.now();
 
     if (textStyle === 'full_circle') {
-      // 🔥 DYNAMIC FULL CIRCLE — छोटा/बड़ा अपने आप
       const circle = buildFullCirclePath(name, fs2, pxX, pxY);
       pathD = circle.path;
     } else if (curve === 0) {
@@ -212,9 +206,10 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
       pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
     }
 
+    // 🔥 font-family और stroke में सुधार किया गया है
     const svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
       <path id="${uniqueId}" d="${pathD}" fill="transparent" />
-      <text font-family="sans-serif" font-weight="${boldVal}" font-style="${italicVal}" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="${Math.max(2, Math.floor(fs2/20))}" transform="rotate(${angleVal} ${pxX} ${pxY})">
+      <text font-family="${fontFamilyVal}" font-weight="${boldVal}" font-style="${italicVal}" font-size="${fs2}" fill="${textColor}" transform="rotate(${angleVal} ${pxX} ${pxY})">
         <textPath href="#${uniqueId}" startOffset="50%" text-anchor="middle">${name}</textPath>
       </text>
     </svg>`;
@@ -278,7 +273,7 @@ function saveOut(buf, prefix, ext = 'png') {
 // 1. FULL AUTO (सभी फीचर्स के साथ)
 app.post('/api/auto', upload.single('image'), async (req, res) => {
   try {
-    const { prompt = '', name = '', aspect = '2:3', customW, customH, use3d = 'false', curve = 0, angle = 0, textColor = '#ffffff', fontSize = 10, isBold = 'normal', isItalic = 'normal', textStyle = 'normal' } = req.body;
+    const { prompt = '', name = '', aspect = '2:3', customW, customH, use3d = 'false', curve = 0, angle = 0, textColor = '#ffffff', fontSize = 10, isBold = 'normal', isItalic = 'normal', textStyle = 'normal', fontFamily = 'Arial, sans-serif' } = req.body;
     const inputBuf = fs.readFileSync(req.file.path);
     const steps = {};
 
@@ -299,7 +294,7 @@ app.post('/api/auto', upload.single('image'), async (req, res) => {
       textImg = await generateStylishText(name);
     }
 
-    const final = await callKittlComposeAPI(bg, hd, aspect, name, textImg, customW, customH, curve, angle, textColor, fontSize, isBold, isItalic, textStyle);
+    const final = await callKittlComposeAPI(bg, hd, aspect, name, textImg, customW, customH, curve, angle, textColor, fontSize, isBold, isItalic, textStyle, fontFamily);
     steps.finalPreview = saveOut(await addWatermark(final), 'final_wm');
     steps.finalRaw = saveOut(final, 'final');
 
@@ -434,11 +429,12 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
   }
 });
 
-// 9. MANUAL TEXT PLACEMENT (WordArt Curve & Full Circle के साथ)
+// 9. MANUAL TEXT PLACEMENT (फॉन्ट और स्टाइल के साथ)
 app.post('/api/manual-text', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
-    const { name = '', textX = 50, textY = 20, textStyle = 'normal', textColor = '#ffffff', curve = 0, angle = 0, fontSize = 10, isBold = 'normal', isItalic = 'normal' } = req.body;
+    // 🔥 यहाँ fontFamily जोड़ दिया गया है
+    const { name = '', textX = 50, textY = 20, textStyle = 'normal', textColor = '#ffffff', curve = 0, angle = 0, fontSize = 10, isBold = 'normal', isItalic = 'normal', fontFamily = 'Arial, sans-serif' } = req.body;
 
     if (!name) throw new Error("कृपया नाम लिखें");
 
@@ -456,7 +452,7 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
     if (textStyle === 'vertical') {
       // खड़ा (Vertical)
       svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-        <text x="${pxX}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="${Math.max(2, Math.floor(fs2/20))}" transform="rotate(90 ${pxX} ${pxY})">${name}</text>
+        <text x="${pxX}" y="${pxY}" text-anchor="middle" font-family="${fontFamily}" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" transform="rotate(90 ${pxX} ${pxY})">${name}</text>
       </svg>`;
     } else {
       const textLength = name.length * fs2 * 0.6;
@@ -468,7 +464,6 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
       const uniqueId = "manual_path_" + Date.now();
 
       if (textStyle === 'full_circle') {
-        // 🔥 DYNAMIC FULL CIRCLE — छोटा/बड़ा अपने आप fit
         const circle = buildFullCirclePath(name, fs2, pxX, pxY);
         pathD = circle.path;
       } else if (textStyle === 'round') {
@@ -481,9 +476,10 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
         pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
       }
 
+      // 🔥 यहाँ भी fontFamily जोड़ दिया गया है और stroke हटा दिया गया है
       svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
         <path id="${uniqueId}" d="${pathD}" fill="transparent" />
-        <text font-family="sans-serif" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="${Math.max(2, Math.floor(fs2/20))}" transform="${finalTransform}">
+        <text font-family="${fontFamily}" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" transform="${finalTransform}">
           <textPath href="#${uniqueId}" startOffset="50%" text-anchor="middle">${name}</textPath>
         </text>
       </svg>`;
