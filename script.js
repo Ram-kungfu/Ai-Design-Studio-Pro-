@@ -269,14 +269,18 @@ function updateEditorText() {
   // 🔥 बाकी सभी स्टाइल्स (Normal, Horizontal, Round, Full Circle) पाथ (Path) पर चलते हैं
   else {
     if (style === 'full_circle') {
-      // पूरा गोल (Zero)
+      // पूरा गोल (Zero) - बिल्कुल सीधा और परफेक्ट
       const r = calcCircleRadius(name, fontSize);
       pathD = `M ${centerX} ${pxY - r} a ${r},${r} 0 1,1 0,${r * 2} a ${r},${r} 0 1,1 0,${-r * 2}`;
     } 
-    else if (style === 'round' || (curveVal !== 0 && !isNaN(curveVal))) {
-      // गोल या कर्व
-      let cVal = (style === 'round') ? 50 : curveVal;
-      let controlY = pxY - (cVal * 1.5);
+    else if (style === 'round') {
+      // गोल (Round) - पूरा ऊपर की तरफ मुड़ा हुआ, एकदम सीधा
+      let controlY = pxY - (50 * 2); // ऊपर की तरफ मोड़
+      pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
+    } 
+    else if (curveVal !== 0 && !isNaN(curveVal)) {
+      // कर्व स्लाइडर
+      let controlY = pxY - (curveVal * 1.5);
       pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
     } 
     else {
@@ -399,6 +403,8 @@ async function runAuto() {
   fd.append('isBold', isBold ? 'bold' : 'normal');
   fd.append('isItalic', isItalic ? 'italic' : 'normal');
   fd.append('textStyle', $('textStyleSelect').value);
+  
+  if ($('fontFamilySelect')) fd.append('fontFamily', $('fontFamilySelect').value);
 
   try {
     const r = await fetch('/api/auto', { method: 'POST', body: fd });
