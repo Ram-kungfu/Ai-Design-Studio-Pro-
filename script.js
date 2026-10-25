@@ -227,7 +227,7 @@ function calcCircleRadius(text, fontSizePx) {
 function updateEditorText() {
   if (!draggableText) return;
   
-  const name = $('nameInput').value || 'RAHUL';
+  const name = $('nameInput').value;
   const style = $('textStyleSelect').value;
   const color = $('textColorPicker').value;
   const fontWeight = isBold ? 'bold' : 'normal';
