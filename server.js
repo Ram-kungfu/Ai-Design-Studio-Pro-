@@ -72,6 +72,7 @@ async function callVectorizerAPI(buffer) {
   const fd = new FormData();
   fd.append('image', await sharp(buffer).flatten({ background: '#ffffff' }).png().toBuffer(), { filename: 'design.png' });
   fd.append('output.file_format', 'pdf');
+  fd.append('mode', 'test');
   const auth = Buffer.from(`${KEYS.VEC_ID}:${KEYS.VEC_SECRET}`).toString('base64');
   try {
     const r = await axios.post('https://api.vectorizer.ai/api/v1/vectorize', fd, {
