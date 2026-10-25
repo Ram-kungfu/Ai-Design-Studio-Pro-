@@ -136,8 +136,8 @@ async function generateStylishText(text, style = '3D golden') {
   }
 }
 
-// 6. Compose (सभी नए फीचर्स के साथ - WordArt Curve, RGB, Bold, Italic, Font Size)
-async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null, curveVal = 0, angleVal = 0, textColor = '#ffffff', fontSizeVal = 10, boldVal = 'normal', italicVal = 'normal') {
+// 6. Compose (सभी नए फीचर्स के साथ - WordArt Curve, Full Circle, RGB, Bold, Italic, Font Size)
+async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null, curveVal = 0, angleVal = 0, textColor = '#ffffff', fontSizeVal = 10, boldVal = 'normal', italicVal = 'normal', textStyle = 'normal') {
   let W, H;
   if (customW && customH) {
     W = parseInt(customW);
@@ -167,7 +167,7 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     const ty = Math.floor(H * 0.15);
     composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
   } 
-  // सिंपल टेक्स्ट (WordArt Curve, Angle, Color, Bold, Italic के साथ)
+  // सिंपल टेक्स्ट (WordArt Curve, Full Circle, Angle, Color, Bold, Italic के साथ)
   else if (name) {
     const fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100)); 
     const pxX = W / 2;
@@ -180,8 +180,11 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     let pathD = "";
     const curve = parseFloat(curveVal);
     
-    // 🔥 WordArt Curve Logic (Server Side)
-    if (curve === 0) {
+    // 🔥 WordArt Curve & Full Circle Logic (Server Side)
+    if (textStyle === 'full_circle') {
+        const r = 60;
+        pathD = `M ${pxX} ${pxY - r} A ${r} ${r} 0 1 1 ${pxX} ${pxY + r} A ${r} ${r} 0 1 1 ${pxX} ${pxY - r}`;
+    } else if (curve === 0) {
       pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
     } else {
       const controlY = pxY - (curve * 3); 
@@ -256,7 +259,7 @@ function saveOut(buf, prefix, ext = 'png') {
 // 1. FULL AUTO (सभी फीचर्स के साथ)
 app.post('/api/auto', upload.single('image'), async (req, res) => {
   try {
-    const { prompt = '', name = '', aspect = '2:3', customW, customH, use3d = 'false', curve = 0, angle = 0, textColor = '#ffffff', fontSize = 10, isBold = 'normal', isItalic = 'normal' } = req.body;
+    const { prompt = '', name = '', aspect = '2:3', customW, customH, use3d = 'false', curve = 0, angle = 0, textColor = '#ffffff', fontSize = 10, isBold = 'normal', isItalic = 'normal', textStyle = 'normal' } = req.body;
     const inputBuf = fs.readFileSync(req.file.path);
     const steps = {};
 
@@ -277,7 +280,7 @@ app.post('/api/auto', upload.single('image'), async (req, res) => {
       textImg = await generateStylishText(name);
     }
 
-    const final = await callKittlComposeAPI(bg, hd, aspect, name, textImg, customW, customH, curve, angle, textColor, fontSize, isBold, isItalic);
+    const final = await callKittlComposeAPI(bg, hd, aspect, name, textImg, customW, customH, curve, angle, textColor, fontSize, isBold, isItalic, textStyle);
     steps.finalPreview = saveOut(await addWatermark(final), 'final_wm');
     steps.finalRaw = saveOut(final, 'final');
 
@@ -412,7 +415,7 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
   }
 });
 
-// 9. MANUAL TEXT PLACEMENT (WordArt Curve के साथ - ड्रैग एंड ड्रॉप के लिए)
+// 9. MANUAL TEXT PLACEMENT (WordArt Curve & Full Circle के साथ)
 app.post('/api/manual-text', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
@@ -444,13 +447,14 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
       
       const curveFloat = parseFloat(curve);
       
-      // 🔥 WordArt Curve Logic
-      if (textStyle === 'round') {
-        // गोल (Arc) - Quadratic Curve
-        const controlY = pxY - (50 * 3); // Fixed curve for 'round' style
+      // 🔥 WordArt Curve & Full Circle Logic
+      if (textStyle === 'full_circle') {
+        const r = 60;
+        pathD = `M ${pxX} ${pxY - r} A ${r} ${r} 0 1 1 ${pxX} ${pxY + r} A ${r} ${r} 0 1 1 ${pxX} ${pxY - r}`;
+      } else if (textStyle === 'round') {
+        const controlY = pxY - (50 * 3); 
         pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
       } else if (textStyle === 'rotate') {
-        // तिरछा (Rotate)
         finalTransform = `rotate(45 ${pxX} ${pxY})`; 
       } else if (curveFloat !== 0) {
         const controlY = pxY - (curveFloat * 3);
