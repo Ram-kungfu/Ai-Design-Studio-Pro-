@@ -401,7 +401,7 @@ app.post('/api/background', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 7. AUTO VARIATIONS (4 डिज़ाइन)
+// 7. AUTO VARIATIONS (4 डिज़ाइन - डिले और रिट्राई के साथ)
 app.post('/api/variations', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
@@ -416,11 +416,35 @@ app.post('/api/variations', upload.single('image'), async (req, res) => {
 
     for (let i = 0; i < styles.length; i++) {
       try {
-        const bg = await callRecraftStabilityAPI(styles[i], aspect);
-        const finalDesign = await callKittlComposeAPI(bg, buf, aspect, name);
-        const wmDesign = await addWatermark(finalDesign);
-        variations.push(saveOut(wmDesign, `variation_${i+1}`));
-      } catch (err) {}
+        let bg = null;
+        let retries = 3; // 🔥 3 बार ट्राई करेगा
+
+        // 🔥 जब तक इमेज नहीं आती, तब तक ट्राई करता रहेगा
+        while (retries > 0 && !bg) {
+          try {
+            bg = await callRecraftStabilityAPI(styles[i], aspect);
+            // अगर इमेज बहुत छोटी है या खाली है, तो उसे अस्वीकार करें
+            if (bg && bg.length < 5000) {
+              bg = null;
+              throw new Error("Empty image");
+            }
+          } catch (e) {
+            bg = null;
+            retries--;
+            console.log(`Retry डिज़ाइन ${i+1} के लिए... बाकी ${retries}`);
+            // 🔥 3 सेकंड का इंतज़ार करें ताकि सर्वर ब्लॉक न हो
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+        }
+
+        if (bg) {
+          const finalDesign = await callKittlComposeAPI(bg, buf, aspect, name);
+          const wmDesign = await addWatermark(finalDesign);
+          variations.push(saveOut(wmDesign, `variation_${i+1}`));
+        }
+      } catch (err) {
+        console.error("डिज़ाइन फेल:", err.message);
+      }
     }
 
     fs.unlinkSync(req.file.path);
