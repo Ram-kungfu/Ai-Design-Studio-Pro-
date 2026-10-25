@@ -1,657 +1,597 @@
-// 🔥 नया फंक्शन (बिना SAM के - फ्री तरीका)
-async function runDirectVector() {
-  if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('सीधा कट + वेक्टर बन रहा है...'); toggleButtons(true);
-  const fd = new FormData(); 
-  fd.append('image', currentFile);
-  
+require('dotenv').config();
+const express = require('express');
+const multer = require('multer');
+const axios = require('axios');
+const FormData = require('form-data');
+const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
+const cors = require('cors');
+const { nanoid } = require('nanoid');
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.static(__dirname));
+
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+const OUTPUT_DIR = path.join(__dirname, 'outputs');
+[UPLOAD_DIR, OUTPUT_DIR].forEach(d => fs.existsSync(d) || fs.mkdirSync(d, { recursive: true }));
+app.use('/outputs', express.static(OUTPUT_DIR));
+
+const upload = multer({ dest: UPLOAD_DIR, limits: { fileSize: 30 * 1024 * 1024 } });
+const GEM_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
+
+// ================= API KEYS =================
+const KEYS = {
+  REMOVEBG: process.env.REMOVEBG_KEY,
+  DEEPAI: process.env.DEEPAI_KEY,
+  GEMINI: process.env.GEMINI_KEY,
+  VEC_ID: process.env.VECTORIZER_ID,
+  VEC_SECRET: process.env.VECTORIZER_SECRET
+};
+
+// ================= AI FUNCTIONS =================
+
+// 1. Remove Background (Clipdrop / Remove.bg)
+async function callRemoveBgAPI(buffer, person = false) {
+  const fd = new FormData();
+  fd.append('image_file', buffer, { filename: 'img.png' });
+  fd.append('size', 'auto');
+  if (person) fd.append('type', 'person');
   try {
-    const r = await fetch('/api/direct-vector', { method: 'POST', body: fd });
-    const data = await r.json();
-    if (data.error) throw new Error(data.error);
-    
-    const grid = $('layerResults');
-    data.results.forEach(res => {
-      // 🔥 यहाँ res.rawPng पास किया गया है ताकि बिना वॉटरमार्क वाला बटन काम करे
-      const div = createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, 'कट + वेक्टर', true);
-      grid.appendChild(div);
+    const r = await axios.post('https://api.remove.bg/v1.0/removebg', fd, {
+      headers: { 'X-Api-Key': KEYS.REMOVEBG, ...fd.getHeaders() },
+      responseType: 'arraybuffer', timeout: 120000
     });
-    setStatus('✅ कट + वेक्टर तैयार!', 'ok');
-  } catch (e) { 
-    setStatus('❌ ' + e.message, 'err'); 
-  } finally { 
-    toggleButtons(false); 
+    return Buffer.from(r.data, 'binary');
+  } catch (e) { throw new Error("Background removal failed."); }
+}
+
+// 2. HD Upscale (Topaz / DeepAI)
+async function callHDUpscaleAPI(buffer) {
+  try {
+    const src = await sharp(buffer).resize({ width: 1200, withoutEnlargement: true }).png().toBuffer();
+    const fd = new FormData();
+    fd.append('image', src, { filename: 'in.png' });
+    const r = await axios.post('https://api.deepai.org/api/torch-srgan', fd, {
+      headers: { 'api-key': KEYS.DEEPAI, ...fd.getHeaders() }, timeout: 180000
+    });
+    if (!r.data.output_url) throw new Error("DeepAI failed");
+    const hd = await axios.get(r.data.output_url, { responseType: 'arraybuffer' });
+    return Buffer.from(hd.data);
+  } catch (e) {
+    return await sharp(buffer).resize({ width: 3000, withoutEnlargement: true, kernel: 'lanczos3' }).sharpen().png().toBuffer();
   }
 }
 
-const $ = id => document.getElementById(id);
-let currentFile = null;
-
-// ड्रैग एंड ड्रॉप और स्लाइडर्स के लिए वेरिएबल्स
-let currentX = 50, currentY = 20;
-let isDragging = false;
-let currentCurve = 0;
-let currentAngle = 0;
-let isBold = false;
-let isItalic = false;
-let currentFontSize = 10;
-
-// बटन (handles) के लिए वेरिएबल्स
-let isResizing = false;
-let isRotating = false;
-let startDist = 0;
-let startFontSize = 10;
-
-// --- Tab Switching ---
-function openTab(tabId, btn) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  $(tabId).classList.add('active');
-  btn.classList.add('active');
+// 3. Vectorize (Vectorizer.AI)
+async function callVectorizerAPI(buffer) {
+  const fd = new FormData();
+  fd.append('image', await sharp(buffer).flatten({ background: '#ffffff' }).png().toBuffer(), { filename: 'design.png' });
+  fd.append('output.file_format', 'pdf');
+  const auth = Buffer.from(`${KEYS.VEC_ID}:${KEYS.VEC_SECRET}`).toString('base64');
+  try {
+    const r = await axios.post('https://api.vectorizer.ai/api/v1/vectorize', fd, {
+      headers: { 'Authorization': `Basic ${auth}`, ...fd.getHeaders() },
+      responseType: 'arraybuffer', timeout: 240000
+    });
+    return Buffer.from(r.data);
+  } catch (e) { throw new Error("Vectorizer API failed."); }
 }
 
-// --- File Upload ---
-const dropzone = $('dropzone'), fileInput = $('fileInput'), previewImg = $('previewImg'), dropText = $('dropText');
-dropzone.addEventListener('click', () => fileInput.click());
-dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
-dropzone.addEventListener('drop', e => {
-  e.preventDefault(); dropzone.classList.remove('drag');
-  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+// 4. AI Background Generator (Recraft / Gemini / Pollinations)
+async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
+  const BG_SUFFIX = '. Background design only, vibrant, professional, no people, no text.';
+  try {
+    const payload = {
+      contents: [{ parts: [{ text: prompt + BG_SUFFIX }] }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: aspect } }
+    };
+    const r = await axios.post(`${GEM_URL}gemini-3.1-flash-image:generateContent`, payload, {
+      headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' }, timeout: 180000
+    });
+    for (const cand of r.data.candidates || []) {
+      for (const part of cand.content?.parts || []) {
+        const inl = part.inlineData || part.inline_data;
+        if (inl?.data) return Buffer.from(inl.data, 'base64');
+      }
+    }
+    throw new Error("No image returned");
+  } catch (e) {
+    const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt + BG_SUFFIX) + '?width=1024&height=1536&nologo=true&seed=' + Math.floor(Math.random() * 100000);
+    const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
+    return Buffer.from(r.data);
+  }
+}
 
-function handleFile(file) {
-  currentFile = file;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    previewImg.src = ev.target.result;
-    previewImg.classList.remove('hidden');
+// 5. 3D स्टाइलिश टेक्स्ट बनाना
+async function generateStylishText(text, style = '3D golden') {
+  try {
+    const prompt = `Generate a beautiful, high quality, transparent PNG (no background) of the text "${text}" written in ${style} font style. Make it look premium, 3D, and print-ready. The text should be perfectly aligned and centered.`;
 
-    const editorBg = $('editorBg');
-    editorBg.src = ev.target.result;
-    editorBg.style.display = 'block';
+    const payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
+    };
 
-    dropText.textContent = `✅ ${file.name}`;
+    const r = await axios.post(`${GEM_URL}gemini-3.1-flash-image:generateContent`, payload, {
+      headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' }, timeout: 180000
+    });
+
+    for (const cand of r.data.candidates || []) {
+      for (const part of cand.content?.parts || []) {
+        const inl = part.inlineData || part.inline_data;
+        if (inl?.data) {
+          return Buffer.from(inl.data, 'base64');
+        }
+      }
+    }
+    throw new Error("AI ने कोई टेक्स्ट इमेज नहीं दी");
+  } catch (e) {
+    console.error("Stylish Text Error:", e.message);
+    return null;
+  }
+}
+
+// ================= 🔥 HELPER: DYNAMIC FULL CIRCLE PATH =================
+function buildFullCirclePath(text, fontSizePx, centerX, centerY) {
+  const textWidth = text.length * fontSizePx * 0.6;
+  let r = textWidth / (2 * Math.PI);
+  if (r < 10) r = 10;
+  const top = centerY - r;
+  const bottom = centerY + r;
+  return {
+    radius: r,
+    path: `M ${centerX} ${top} A ${r} ${r} 0 1 1 ${centerX} ${bottom} A ${r} ${r} 0 1 1 ${centerX} ${top}`
   };
-  reader.readAsDataURL(file);
 }
 
-// --- 🔥 Live Drag, Resize, Rotate Logic ---
-const draggableText = $('draggableText');
-const editorContainer = $('editorContainer');
-
-if (draggableText && editorContainer) {
-  // टेक्स्ट पर क्लिक करने पर सेलेक्ट (बॉर्डर और बटन दिखें)
-  draggableText.addEventListener('pointerdown', (e) => {
-    if (e.target.classList.contains('handle')) return;
-    draggableText.classList.add('selected');
-    isDragging = true;
-    draggableText.style.cursor = 'grabbing';
-    e.preventDefault();
-  });
-
-  // बाहर क्लिक करने पर सेलेक्शन हटाएँ
-  document.addEventListener('pointerdown', (e) => {
-    if (!draggableText.contains(e.target) && e.target !== draggableText) {
-      draggableText.classList.remove('selected');
-    }
-  });
-
-  document.addEventListener('pointermove', (e) => {
-    const rect = editorContainer.getBoundingClientRect();
-    const centerX = rect.left + (currentX / 100) * rect.width;
-    const centerY = rect.top + (currentY / 100) * rect.height;
-
-    // 🔥 ड्रैग (Drag) करना
-    if (isDragging) {
-      let x = e.clientX - rect.left;
-      let y = e.clientY - rect.top;
-      x = Math.max(0, Math.min(x, rect.width));
-      y = Math.max(0, Math.min(y, rect.height));
-
-      currentX = (x / rect.width) * 100;
-      currentY = (y / rect.height) * 100;
-
-      draggableText.style.left = currentX + '%';
-      draggableText.style.top = currentY + '%';
-    }
-
-    // 🔥 छोटा-बड़ा करना (Resize)
-    if (isResizing) {
-      let dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
-      let scaleFactor = dist / startDist;
-      let newSize = Math.round(startFontSize * scaleFactor);
-      newSize = Math.max(2, Math.min(50, newSize));
-
-      currentFontSize = newSize;
-      $('fontSizeSlider').value = currentFontSize;
-      $('fontSizeVal').textContent = currentFontSize;
-      updateEditorText();
-    }
-
-    // 🔥 घुमाना (Rotate)
-    if (isRotating) {
-      let angleRad = Math.atan2(e.clientY - centerY, e.clientX - centerX);
-      let angleDeg = (angleRad * 180) / Math.PI;
-
-      currentAngle = Math.round(angleDeg + 90);
-
-      $('angleSlider').value = currentAngle;
-      $('angleVal').textContent = currentAngle;
-      updateEditorText();
-    }
-  });
-
-  document.addEventListener('pointerup', () => {
-    isDragging = false;
-    isResizing = false;
-    isRotating = false;
-    draggableText.style.cursor = 'grab';
-  });
-}
-
-// बटन (Handles) बनाना
-function setupHandles() {
-  if (document.querySelector('.handle')) return;
-
-  const resizeHandle = document.createElement('div');
-  resizeHandle.className = 'handle resize';
-
-  const rotateHandle = document.createElement('div');
-  rotateHandle.className = 'handle rotate';
-
-  // Resize (छोटा-बड़ा) बटन का लॉजिक
-  resizeHandle.addEventListener('pointerdown', (e) => {
-    e.stopPropagation();
-    const rect = editorContainer.getBoundingClientRect();
-    const centerX = rect.left + (currentX / 100) * rect.width;
-    const centerY = rect.top + (currentY / 100) * rect.height;
-
-    isResizing = true;
-    startDist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
-    startFontSize = currentFontSize;
-    e.preventDefault();
-  });
-
-  // Rotate (घुमाने) बटन का लॉजिक
-  rotateHandle.addEventListener('pointerdown', (e) => {
-    e.stopPropagation();
-    isRotating = true;
-    e.preventDefault();
-  });
-
-  draggableText.appendChild(resizeHandle);
-  draggableText.appendChild(rotateHandle);
-}
-
-// --- 🔥 स्लाइडर फंक्शन्स ---
-function syncColorPicker() {
-  const selectedColor = $('textColorSelect').value;
-  $('textColorPicker').value = selectedColor;
-  updateEditorText();
-}
-
-function updateCurveValue() {
-  currentCurve = $('curveSlider').value;
-  $('curveVal').textContent = currentCurve;
-  updateEditorText();
-}
-
-function updateAngleValue() {
-  currentAngle = $('angleSlider').value;
-  $('angleVal').textContent = currentAngle;
-  updateEditorText();
-}
-
-function updateFontSize() {
-  currentFontSize = $('fontSizeSlider').value;
-  $('fontSizeVal').textContent = currentFontSize;
-  updateEditorText();
-}
-
-function toggleBold() {
-  isBold = !isBold;
-  $('boldBtn').style.background = isBold ? '#fbbf24' : '#334155';
-  $('boldBtn').style.color = isBold ? '#000' : '#fff';
-  updateEditorText();
-}
-
-function toggleItalic() {
-  isItalic = !isItalic;
-  $('italicBtn').style.background = isItalic ? '#fbbf24' : '#334155';
-  $('italicBtn').style.color = isItalic ? '#000' : '#fff';
-  updateEditorText();
-}
-
-function applyCMYK() {
-  const c = parseFloat($('cmykC').value) / 100;
-  const m = parseFloat($('cmykM').value) / 100;
-  const y = parseFloat($('cmykY').value) / 100;
-  const k = parseFloat($('cmykK').value) / 100;
-
-  let r = Math.round(255 * (1 - c) * (1 - k));
-  let g = Math.round(255 * (1 - m) * (1 - k));
-  let b = Math.round(255 * (1 - y) * (1 - k));
-
-  const hex = "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1).toUpperCase();
-  $('textColorPicker').value = hex;
-  updateEditorText();
-}
-
-// ============================================================
-// 🔥 HELPER: DYNAMIC FULL CIRCLE (छोटा/बड़ा अपने आप fit)
-// ============================================================
-function calcCircleRadius(text, fontSizePx) {
-  const approxTextWidth = text.length * fontSizePx * 0.6;
-  let r = approxTextWidth / (2 * Math.PI);
-  if (r < 10) r = 10; 
-  return r;
-}
-
-// 🔥 टेक्स्ट हटाने का फंक्शन (नया जोड़ा गया है)
-function clearText() {
-  $('nameInput').value = '';
-  updateEditorText();
-}
-
-// 🔥 टेक्स्ट और स्टाइल अपडेट करने का सही लॉजिक (सभी स्टाइल्स के साथ)
-function updateEditorText() {
-  if (!draggableText) return;
-  
-  // 🔥 यहाँ 'RAHUL' हटा दिया गया है ताकि खाली होने पर कुछ न दिखे
-  const name = $('nameInput').value; 
-  const style = $('textStyleSelect').value;
-  const color = $('textColorPicker').value;
-  const fontWeight = isBold ? 'bold' : 'normal';
-  const fontStyle = isItalic ? 'italic' : 'normal';
-  
-  // 🔥 फॉन्ट फैमिली लें (अगर ड्रॉपडाउन नहीं है तो Arial ले लो)
-  const fontFamily = $('fontFamilySelect') ? $('fontFamilySelect').value : 'Arial, sans-serif';
-
-  const w = 400;
-  const h = 150;
-  const pxY = h / 2;
-  const fontSize = currentFontSize * 4;
-
-  // अगर नाम खाली है, तो कुछ भी मत दिखाओ (सिर्फ बटन रहने दो)
-  if (!name) {
-    const oldSvg = draggableText.querySelector('svg');
-    if (oldSvg) oldSvg.remove();
-    setupHandles();
-    return;
-  }
-
-  // बॉक्स का रोटेशन (अगर 'तिरछा' चुना है तो 45 डिग्री तिरछा करें)
-  let boxRotation = currentAngle;
-  if (style === 'rotate') {
-    boxRotation = currentAngle + 45; 
-  }
-  draggableText.style.transform = `translate(-50%, -50%) rotate(${boxRotation}deg)`;
-
-  let pathD = "";
-  const startX = 30;
-  const endX = w - 30;
-  const centerX = w / 2;
-  const curveVal = parseFloat(currentCurve);
-
-  let svgContent = "";
-
-  // 🔥 1. Vertical (खड़ा) का लॉजिक
-  if (style === 'vertical') {
-    svgContent = `
-      <text x="${centerX}" y="${pxY}" text-anchor="middle" dominant-baseline="middle" 
-            font-family="${fontFamily}" font-size="${fontSize}" 
-            font-weight="${fontWeight}" font-style="${fontStyle}" 
-            fill="${color}" transform="rotate(90 ${centerX} ${pxY})">
-        ${name}
-      </text>`;
-  } 
-  // 🔥 बाकी सभी स्टाइल्स (Normal, Horizontal, Round, Full Circle) पाथ (Path) पर चलते हैं
-  else {
-    if (style === 'full_circle') {
-      // पूरा गोल (Zero) - बिल्कुल सीधा और परफेक्ट
-      const r = calcCircleRadius(name, fontSize);
-      pathD = `M ${centerX} ${pxY - r} a ${r},${r} 0 1,1 0,${r * 2} a ${r},${r} 0 1,1 0,${-r * 2}`;
-    } 
-    else if (style === 'round') {
-      // गोल (Round) - पूरा ऊपर की तरफ मुड़ा हुआ, एकदम सीधा
-      let controlY = pxY - (50 * 2); // ऊपर की तरफ मोड़
-      pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
-    } 
-    else if (curveVal !== 0 && !isNaN(curveVal)) {
-      // कर्व स्लाइडर
-      let controlY = pxY - (curveVal * 1.5);
-      pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
-    } 
-    else {
-      // सीधा (Normal और Horizontal)
-      pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
-    }
-
-    // 🔥 यहाँ से 'stroke="black"' हटा दिया गया है ताकि अक्षर कटे नहीं
-    svgContent = `
-      <path id="livePath" d="${pathD}" fill="transparent" />
-      <text font-family="${fontFamily}" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" pointer-events="none">
-        <textPath href="#livePath" startOffset="50%" text-anchor="middle">${name}</textPath>
-      </text>
-    `;
-  }
-
-  const svgWrapper = document.createElement('div');
-  svgWrapper.innerHTML = `
-    <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="pointer-events: none; overflow: visible;">
-      ${svgContent}
-    </svg>
-  `;
-
-  // पुराने SVG को हटाकर नया लगाएँ (बटन्स को बचाकर)
-  const oldSvg = draggableText.querySelector('svg');
-  if (oldSvg) oldSvg.remove();
-  draggableText.insertBefore(svgWrapper.firstElementChild, draggableText.firstChild);
-
-  setupHandles();
-}
-
-document.getElementById('aspectSelect').addEventListener('change', function () {
-  const box = document.getElementById('customSizeBox');
-  if (this.value === 'custom') {
-    box.style.display = 'block';
+// 6. Compose
+async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null, curveVal = 0, angleVal = 0, textColor = '#ffffff', fontSizeVal = 10, boldVal = 'normal', italicVal = 'normal', textStyle = 'normal', fontFamilyVal = 'Arial, sans-serif') {
+  let W, H;
+  if (customW && customH) {
+    W = parseInt(customW);
+    H = parseInt(customH);
   } else {
-    box.style.display = 'none';
+    const sizeMap = { '2:3': [2000, 3000], '1:1': [2400, 2400], '3:2': [3000, 2000] };
+    [W, H] = sizeMap[aspect] || sizeMap['2:3'];
+  }
+
+  let bgCanvas = bgBuf ? await sharp(bgBuf).resize(W, H, { fit: 'cover', position: 'center' }).toBuffer()
+    : await sharp({ create: { width: W, height: H, channels: 3, background: '#ffffff' } }).png().toBuffer();
+
+  const cutMeta = await sharp(cutBuf).metadata();
+  const targetH = Math.floor(H * 0.74);
+  const targetW = Math.floor(cutMeta.width * (targetH / cutMeta.height));
+  const cutResized = await sharp(cutBuf).resize({ width: targetW, height: targetH, fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).toBuffer();
+
+  const x = Math.floor((W - targetW) / 2);
+  const y = Math.floor((H - targetH) / 2 + H * 0.05);
+  let composed = await sharp(bgCanvas).composite([{ input: cutResized, left: x, top: y }]).png().toBuffer();
+
+  if (textImageBuf) {
+    try {
+      const textResized = await sharp(textImageBuf).resize({ width: Math.floor(W * 0.7) }).png().toBuffer();
+      const textMeta = await sharp(textResized).metadata();
+      const tx = Math.floor((W - textMeta.width) / 2);
+      const ty = Math.floor(H * 0.15);
+      composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
+    } catch (err) {
+      console.error("3D Text Compose Failed, skipping...");
+      textImageBuf = null;
+    }
+  }
+  
+  if (!textImageBuf && name) {
+    let fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100));
+    if (isNaN(fs2) || fs2 < 10) fs2 = 100;
+
+    const pxX = W / 2;
+    const pxY = H * 0.25;   
+
+    const maxWidth = W * 0.9;
+    let estWidth = name.length * fs2 * 0.6;
+    if (estWidth > maxWidth) fs2 = Math.floor(fs2 * (maxWidth / estWidth));
+
+    let pathD = "";
+    const curve = parseFloat(curveVal) || 0;
+    const uniqueId = "path_" + Date.now();
+    let extraTransform = "";
+
+    if (textStyle === 'rotate') {
+      extraTransform = `transform="rotate(45 ${pxX} ${pxY})"`;
+    }
+
+    if (textStyle === 'full_circle') {
+      const circle = buildFullCirclePath(name, fs2, pxX, pxY);
+      pathD = circle.path;
+    } else if (textStyle === 'round') {
+      const controlY = pxY - (50 * 3); 
+      const startX = pxX - 200;
+      const endX = pxX + 200;
+      pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
+    } else if (curve === 0) {
+      const textLength = name.length * fs2 * 0.6;
+      const startX = pxX - textLength / 2;
+      const endX = pxX + textLength / 2;
+      pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
+    } else {
+      const textLength = name.length * fs2 * 0.6;
+      const startX = pxX - textLength / 2;
+      const endX = pxX + textLength / 2;
+      const controlY = pxY - (curve * 3);
+      pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
+    }
+
+    const svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+      <path id="${uniqueId}" d="${pathD}" fill="transparent" />
+      <text font-family="${fontFamilyVal}" font-weight="${boldVal}" font-style="${italicVal}" font-size="${fs2}" fill="${textColor}" ${extraTransform}>
+        <textPath href="#${uniqueId}" startOffset="50%" text-anchor="middle">${name}</textPath>
+      </text>
+    </svg>`;
+
+    composed = await sharp(composed).composite([{ input: Buffer.from(svgText), top: 0, left: 0 }]).png().toBuffer();
+  }
+
+  return composed;
+}
+
+// 7. Watermark
+async function addWatermark(buffer, text = "PREVIEW - AI DESIGN STUDIO") {
+  try {
+    const meta = await sharp(buffer).metadata();
+    const W = meta.width, H = meta.height;
+    const fontSize = Math.max(28, Math.floor(H * 0.045));
+    let svg = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">`;
+    for (let y = 40; y < H; y += 200) {
+      for (let x = -100; x < W; x += 300) {
+        svg += `<text x="${x}" y="${y}" font-family="sans-serif" font-size="${fontSize}" fill="rgba(255,40,40,0.3)" transform="rotate(-25 ${x + 80} ${y})">${text}</text>`;
+      }
+    }
+    svg += `</svg>`;
+    return await sharp(buffer).composite([{ input: Buffer.from(svg) }]).png().toBuffer();
+  } catch (e) { return buffer; }
+}
+
+// 8. Python SAM Server से लेयर्स लाना
+async function splitIntoLayersUsingPython(buffer) {
+  try {
+    const fd = new FormData();
+    fd.append('file', buffer, { filename: 'design.png' });
+
+    const PYTHON_SAM_URL = process.env.SAM_SERVER_URL || 'http://localhost:8000/split-layers';
+    console.log("⏳ Python SAM सर्वर से लेयर्स माँग रहे हैं...");
+
+    const r = await axios.post(PYTHON_SAM_URL, fd, {
+      headers: { ...fd.getHeaders() },
+      timeout: 300000
+    });
+
+    if (!r.data.success) throw new Error(r.data.error || "SAM failed");
+
+    const layerBuffers = r.data.layers.map(base64Str => Buffer.from(base64Str, 'base64'));
+    console.log(`✅ SAM से ${layerBuffers.length} लेयर्स मिल गईं!`);
+    return layerBuffers;
+  } catch (e) {
+    console.error("❌ SAM सर्वर एरर:", e.message);
+    throw new Error("SAM सर्वर से कनेक्ट नहीं हो पाया। क्या Python सर्वर चालू है?");
+  }
+}
+
+function saveOut(buf, prefix, ext = 'png') {
+  const name = `${prefix}_${Date.now()}_${nanoid(6)}.${ext}`;
+  fs.writeFileSync(path.join(OUTPUT_DIR, name), buf);
+  return '/outputs/' + name;
+}
+
+// ================= API ROUTES =================
+
+// 1. FULL AUTO (सभी फीचर्स के साथ)
+app.post('/api/auto', upload.single('image'), async (req, res) => {
+  try {
+    const { prompt = '', name = '', aspect = '2:3', customW, customH, use3d = 'false', curve = 0, angle = 0, textColor = '#ffffff', fontSize = 10, isBold = 'normal', isItalic = 'normal', textStyle = 'normal', fontFamily = 'Arial, sans-serif' } = req.body;
+    const inputBuf = fs.readFileSync(req.file.path);
+    const steps = {};
+
+    let cut;
+    try { cut = await callRemoveBgAPI(inputBuf, true); } catch (e) { cut = inputBuf; }
+    steps.cutPreview = saveOut(await addWatermark(cut), 'cut');
+
+    let hd;
+    try { hd = await callHDUpscaleAPI(cut); } catch (e) { hd = cut; }
+    steps.hdPreview = saveOut(await addWatermark(hd), 'hd');
+
+    let bg = null;
+    try { bg = await callRecraftStabilityAPI(prompt, aspect); } catch (e) {}
+    if (bg) steps.bgPreview = saveOut(bg, 'bg');
+
+    let textImg = null;
+    if (name && use3d === 'true') {
+      textImg = await generateStylishText(name);
+    }
+
+    const final = await callKittlComposeAPI(bg, hd, aspect, name, textImg, customW, customH, curve, angle, textColor, fontSize, isBold, isItalic, textStyle, fontFamily);
+    steps.finalPreview = saveOut(await addWatermark(final), 'final_wm');
+    steps.finalRaw = saveOut(final, 'final');
+
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, steps });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 2. SPLIT + TRACE (Python SAM + Vectorizer) - अब यहाँ भी raw इमेज मिलेगी
+app.post('/api/split-and-trace', upload.single('image'), async (req, res) => {
+  try {
+    const buf = fs.readFileSync(req.file.path);
+    const rawLayers = await splitIntoLayersUsingPython(buf);
+
+    if (rawLayers.length === 0) {
+      throw new Error("SAM कोई भी लेयर नहीं बना पाया।");
+    }
+
+    const results = [];
+    for (let i = 0; i < rawLayers.length; i++) {
+      const layerBuf = rawLayers[i];
+      const wmPng = await addWatermark(layerBuf);
+      
+      // 🔥 दोनों इमेज सेव करें (वॉटरमार्क और बिना वॉटरमार्क)
+      const previewPng = saveOut(wmPng, `layer_${i+1}_wm`);
+      const rawPng = saveOut(layerBuf, `layer_${i+1}_raw`);
+
+      let vectorPdf = null;
+      try {
+        const vectorBuf = await callVectorizerAPI(layerBuf);
+        vectorPdf = saveOut(vectorBuf, `vector_layer_${i+1}`, 'pdf');
+      } catch (e) {}
+
+      // 🔥 results में rawPng भी भेजें
+      results.push({ layerNumber: i + 1, previewPng, rawPng, vectorPdf });
+    }
+
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, total: results.length, results });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 3. CUTOUT ONLY (सिर्फ एक बार)
+app.post('/api/cutout', upload.single('image'), async (req, res) => {
+  try {
+    const buf = fs.readFileSync(req.file.path);
+    const person = req.body.person === 'true';
+    const out = await callRemoveBgAPI(buf, person);
+    
+    const preview = saveOut(await addWatermark(out), 'cut_wm');
+    const finalRaw = saveOut(out, 'cut_raw'); 
+    
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, preview, finalRaw });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 4. UPSCALE ONLY (सिर्फ एक बार)
+app.post('/api/upscale', upload.single('image'), async (req, res) => {
+  try {
+    const buf = fs.readFileSync(req.file.path);
+    const out = await callHDUpscaleAPI(buf);
+    
+    const preview = saveOut(await addWatermark(out), 'hd_wm');
+    const finalRaw = saveOut(out, 'hd_raw');
+    
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, preview, finalRaw });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 5. VECTORIZE ONLY
+app.post('/api/vectorize', upload.single('image'), async (req, res) => {
+  try {
+    const buf = fs.readFileSync(req.file.path);
+    const out = await callVectorizerAPI(buf);
+    const url = saveOut(out, 'vector', 'pdf');
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, url });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 6. BACKGROUND ONLY
+app.post('/api/background', async (req, res) => {
+  try {
+    const { prompt = '', aspect = '2:3' } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'prompt required' });
+    const out = await callRecraftStabilityAPI(prompt, aspect);
+    const preview = saveOut(out, 'bg');
+    res.json({ success: true, preview });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 7. AUTO VARIATIONS (5 डिज़ाइन - अब यहाँ भी raw इमेज मिलेगी)
+app.post('/api/variations', upload.single('image'), async (req, res) => {
+  try {
+    const buf = fs.readFileSync(req.file.path);
+    const { name = '', aspect = '2:3' } = req.body;
+    const styles = [
+      "luxury royal gold background, professional poster design",
+      "modern minimalist gradient background, clean design",
+      "vintage floral pattern background, traditional design",
+      "cyberpunk neon dark background, futuristic design",
+      "elegant marble texture background, luxury design"
+    ];
+    const variations = [];
+
+    for (let i = 0; i < styles.length; i++) {
+      try {
+        let bg = null;
+        let retries = 5;
+
+        while (retries > 0 && !bg) {
+          try {
+            bg = await callRecraftStabilityAPI(styles[i], aspect);
+            if (bg && bg.length < 5000) {
+              bg = null;
+              throw new Error("Empty image");
+            }
+          } catch (e) {
+            bg = null;
+            retries--;
+            console.log(`Retry डिज़ाइन ${i+1} के लिए... बाकी ${retries}`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+          }
+        }
+
+        if (bg) {
+          const finalDesign = await callKittlComposeAPI(bg, buf, aspect, name);
+          
+          // 🔥 दोनों इमेज (वॉटरमार्क और बिना वॉटरमार्क) रिजल्ट में भेजें
+          const wmDesign = await addWatermark(finalDesign);
+          variations.push({
+            wmUrl: saveOut(wmDesign, `variation_${i+1}_wm`),
+            rawUrl: saveOut(finalDesign, `variation_${i+1}_raw`)
+          });
+        }
+      } catch (err) {
+        console.error("डिज़ाइन फेल:", err.message);
+      }
+    }
+
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, variations });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 8. 3D TEXT ONLY ROUTE
+app.post('/api/3d-text', upload.single('image'), async (req, res) => {
+  try {
+    const buf = fs.readFileSync(req.file.path);
+    const { name = '', style = '3D golden', aspect = '2:3', customW, customH } = req.body;
+
+    if (!name) throw new Error("कृपया नाम लिखें");
+
+    const textImgBuf = await generateStylishText(name, style);
+    if (!textImgBuf) throw new Error("3D टेक्स्ट नहीं बन पाया।");
+
+    const finalDesign = await callKittlComposeAPI(null, buf, aspect, null, textImgBuf, customW, customH);
+    const wmDesign = await addWatermark(finalDesign);
+
+    const finalPreview = saveOut(wmDesign, '3d_design_wm');
+    const finalRaw = saveOut(finalDesign, '3d_design_raw');
+
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, finalPreview, finalRaw });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
-function applyManualText() {
-  const name = $('nameInput').value;
-  if (!name) return alert('पहले नाम लिखें');
-  if (!currentFile) return alert('पहले फोटो अपलोड करें');
-
-  clearGrid(); setStatus('टेक्स्ट सेट हो रहा है...'); toggleButtons(true);
-
-  const fd = new FormData();
-  fd.append('image', currentFile);
-  fd.append('name', name);
-  fd.append('textX', currentX);
-  fd.append('textY', currentY);
-  fd.append('textStyle', $('textStyleSelect').value);
-  fd.append('textColor', $('textColorPicker').value);
-  fd.append('curve', currentCurve);
-  fd.append('angle', currentAngle);
-  fd.append('fontSize', currentFontSize);
-  fd.append('isBold', isBold ? 'bold' : 'normal');
-  fd.append('isItalic', isItalic ? 'italic' : 'normal');
-  
-  // अगर फॉन्ट ड्रॉपडाउन है तो सर्वर पर भी भेजें
-  if ($('fontFamilySelect')) {
-    fd.append('fontFamily', $('fontFamilySelect').value);
-  }
-
-  fetch('/api/manual-text', { method: 'POST', body: fd })
-    .then(r => r.json())
-    .then(data => {
-      if (data.error) throw new Error(data.error);
-      // 🔥 यहाँ नए कार्ड फंक्शन का इस्तेमाल हुआ है
-      const div = createThumbCard(data.preview, data.finalRaw, null, '✅ टेक्स्ट सेट हो गया', false);
-      $('resultGrid').appendChild(div);
-      setStatus('✅ तैयार!', 'ok');
-    })
-    .catch(e => setStatus('❌ ' + e.message, 'err'))
-    .finally(() => toggleButtons(false));
-}
-
-// --- Helpers ---
-function setStatus(msg, type = '') {
-  const bar = $('statusBar');
-  bar.className = 'status ' + type;
-  bar.innerHTML = (type === '' ? '<span class="spinner"></span>' : '') + msg;
-}
-
-// 🔥 अपडेटेड थंब कार्ड (अब हर जगह दोनों डाउनलोड बटन 100% दिखेंगे)
-function createThumbCard(wmUrl, rawUrl, pdfUrl, label, isVector = false) {
-  const div = document.createElement('div');
-  div.className = 'thumb';
-  
-  // अगर सर्वर से rawUrl (बिना वॉटरमार्क) नहीं आया है, तो बैकअप के तौर पर wmUrl (वॉटरमार्क वाली) ही डाउनलोड होगी
-  const downloadRawUrl = rawUrl || wmUrl;
-  
-  let buttonsHtml = `
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px;">
-      <a href="${wmUrl}" download class="btn small" style="text-align: center; font-size: 11px; padding: 6px; background: #475569;">⬇️ Watermark</a>
-      
-      <a href="${downloadRawUrl}" download class="btn small primary" style="text-align: center; font-size: 11px; padding: 6px; background: #fbbf24; color: #000;">⬇️ बिना WM</a>
-      
-      <button onclick="shareImage('${downloadRawUrl}')" class="btn small" style="text-align: center; font-size: 11px; padding: 6px; background: #3b82f6;">📤 शेयर</button>
-      
-      ${isVector && pdfUrl ? `<a href="${pdfUrl}" download class="btn small primary" style="text-align: center; font-size: 11px; padding: 6px; background: #10b981; color: #fff;">⬇️ PDF</a>` : ''}
-    </div>
-  `;
-
-  div.innerHTML = `
-    <a href="${wmUrl}" target="_blank"><img src="${wmUrl}" /></a>
-    <p>${label}</p>
-    ${buttonsHtml}
-  `;
-  return div;
-}
-
-// 🔥 showThumb को भी अपडेट कर दिया गया है
-function showThumb(url, label) {
-  const div = createThumbCard(url, url, null, label, false);
-  $('resultGrid').appendChild(div);
-}
-
-// 🔥 शेयर करने का फंक्शन (नया जोड़ा गया है)
-async function shareImage(url) {
+// 9. MANUAL TEXT PLACEMENT
+app.post('/api/manual-text', upload.single('image'), async (req, res) => {
   try {
-    // इमेज को फेच करके फाइल में बदलें
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const file = new File([blob], 'design.png', { type: blob.type });
+    const buf = fs.readFileSync(req.file.path);
+    const { name = '', textX = 50, textY = 20, textStyle = 'normal', textColor = '#ffffff', curve = 0, angle = 0, fontSize = 10, isBold = 'normal', isItalic = 'normal', fontFamily = 'Arial, sans-serif' } = req.body;
 
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        files: [file],
-        title: 'AI Design Studio',
-        text: 'मेरा AI डिज़ाइन देखिए!'
-      });
+    if (!name) throw new Error("कृपया नाम लिखें");
+
+    const imgMeta = await sharp(buf).metadata();
+    const W = imgMeta.width;
+    const H = imgMeta.height;
+
+    const pxX = Math.floor((parseFloat(textX) / 100) * W);
+    const pxY = Math.floor((parseFloat(textY) / 100) * H);
+    
+    let fs2 = Math.floor(H * (parseFloat(fontSize) / 100));
+    if (isNaN(fs2) || fs2 < 10) fs2 = 100;
+
+    const maxWidth = W * 0.9;
+    let estWidth = name.length * fs2 * 0.6;
+    if (estWidth > maxWidth) {
+      fs2 = Math.floor(fs2 * (maxWidth / estWidth));
+    }
+
+    let finalTransform = `rotate(${angle} ${pxX} ${pxY})`;
+    let svgText = "";
+
+    if (textStyle === 'vertical') {
+      svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+        <text x="${pxX}" y="${pxY}" text-anchor="middle" font-family="${fontFamily}" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" transform="rotate(90 ${pxX} ${pxY})">${name}</text>
+      </svg>`;
     } else {
-      // अगर शेयर सपोर्ट नहीं है तो डाउनलोड कर दें
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'design.png';
-      a.click();
-    }
-  } catch (error) {
-    console.log('शेयर करने में समस्या:', error);
-    alert('इमेज शेयर नहीं हो पाई, कृपया डाउनलोड करें।');
-  }
-}
+      const textLength = name.length * fs2 * 0.6;
+      const startX = pxX - textLength / 2;
+      const endX = pxX + textLength / 2;
+      let pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
 
-function clearGrid() {
-  $('resultGrid').innerHTML = '';
-  $('layerResults').innerHTML = '';
-  $('downloadBar').classList.add('hidden');
-}
+      const curveFloat = parseFloat(curve);
+      const uniqueId = "manual_path_" + Date.now();
 
-function toggleButtons(disable) {
-  document.querySelectorAll('.btn').forEach(b => b.disabled = disable);
-}
+      if (textStyle === 'full_circle') {
+        const circle = buildFullCirclePath(name, fs2, pxX, pxY);
+        pathD = circle.path;
+      } else if (textStyle === 'round') {
+        const controlY = pxY - (50 * 3); 
+        pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
+      } else if (textStyle === 'rotate') {
+        finalTransform = `rotate(45 ${pxX} ${pxY})`;
+      } else if (curveFloat !== 0) {
+        const controlY = pxY - (curveFloat * 3);
+        pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
+      }
 
-// ==========================================
-// 1. FULL AUTO
-// ==========================================
-async function runAuto() {
-  if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('FULL AUTO चल रहा है...'); toggleButtons(true);
-
-  const fd = new FormData();
-  fd.append('image', currentFile);
-  fd.append('prompt', $('promptInput').value || 'luxury gold background');
-  fd.append('name', $('nameInput').value);
-  fd.append('aspect', $('aspectSelect').value);
-  fd.append('customW', $('customW').value);
-  fd.append('customH', $('customH').value);
-  fd.append('use3d', $('use3dText').checked ? 'true' : 'false');
-  fd.append('curve', currentCurve);
-  fd.append('angle', currentAngle);
-  fd.append('textColor', $('textColorPicker').value);
-  fd.append('fontSize', currentFontSize);
-  fd.append('isBold', isBold ? 'bold' : 'normal');
-  fd.append('isItalic', isItalic ? 'italic' : 'normal');
-  fd.append('textStyle', $('textStyleSelect').value);
-  
-  if ($('fontFamilySelect')) fd.append('fontFamily', $('fontFamilySelect').value);
-
-  try {
-    const r = await fetch('/api/auto', { method: 'POST', body: fd });
-    const data = await r.json();
-    if (data.error) throw new Error(data.error);
-
-    if (data.steps.cutPreview) showThumb(data.steps.cutPreview, '✂️ कटआउट');
-    if (data.steps.finalPreview) {
-      // 🔥 यहाँ नए कार्ड फंक्शन का इस्तेमाल हुआ है ताकि दोनों डाउनलोड बटन आ जाएँ
-      const div = createThumbCard(data.steps.finalPreview, data.steps.finalRaw, null, '✅ Final', false);
-      $('resultGrid').appendChild(div);
+      svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+        <path id="${uniqueId}" d="${pathD}" fill="transparent" />
+        <text font-family="${fontFamily}" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" transform="${finalTransform}">
+          <textPath href="#${uniqueId}" startOffset="50%" text-anchor="middle">${name}</textPath>
+        </text>
+      </svg>`;
     }
 
-    $('downloadFull').href = data.steps.finalRaw;
-    $('downloadPreview').href = data.steps.finalPreview;
-    $('downloadBar').classList.remove('hidden');
-    setStatus('✅ तैयार!', 'ok');
+    const finalImg = await sharp(buf).composite([{ input: Buffer.from(svgText), top: 0, left: 0 }]).png().toBuffer();
+
+    const preview = saveOut(await addWatermark(finalImg), 'manual_text_wm');
+    const finalRaw = saveOut(finalImg, 'manual_text_raw');
+
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, preview, finalRaw });
   } catch (e) {
-    setStatus('❌ ' + e.message, 'err');
-  } finally {
-    toggleButtons(false);
+    res.status(500).json({ error: e.message });
   }
-}
+});
 
-// ==========================================
-// 2. SPLIT + TRACE (SAM + Vector)
-// ==========================================
-async function runSplitAndTrace() {
-  if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('SAM लेयर्स को अलग कर रहा है...'); toggleButtons(true);
-  const fd = new FormData(); fd.append('image', currentFile);
+// 🔥 10. DIRECT CUT + VECTOR (सिर्फ एक बार)
+app.post('/api/direct-vector', upload.single('image'), async (req, res) => {
   try {
-    const r = await fetch('/api/split-and-trace', { method: 'POST', body: fd });
-    const data = await r.json();
-    if (data.error) throw new Error(data.error);
-    const grid = $('layerResults');
-    data.results.forEach(res => {
-      // 🔥 यहाँ नए कार्ड फंक्शन का इस्तेमाल हुआ है
-      const div = createThumbCard(res.previewPng, res.previewPng, res.vectorPdf, `लेयर ${res.layerNumber}`, true);
-      grid.appendChild(div);
-    });
-    setStatus('✅ लेयर्स तैयार!', 'ok');
-  } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
-}
+    const buf = fs.readFileSync(req.file.path);
+    const results = [];
 
-// ==========================================
-// 3. VARIATIONS (4 डिज़ाइन)
-// ==========================================
-async function runVariations() {
-  if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('4 नए डिज़ाइन बन रहे हैं (इसमें 15-20 सेकंड लग सकते हैं)...'); toggleButtons(true);
-  
-  const fd = new FormData();
-  fd.append('image', currentFile);
-  fd.append('name', $('nameInput').value);
-  fd.append('aspect', $('aspectSelect').value);
-
-  try {
-    const r = await fetch('/api/variations', { method: 'POST', body: fd });
-    const data = await r.json();
-    
-    if (data.error) throw new Error(data.error);
-    
-    // 🔥 यहाँ हमने कोड बदला है ताकि wmUrl और rawUrl दोनों सही से पास हो जाएँ
-    if (data.variations && data.variations.length > 0) {
-      data.variations.forEach((item, i) => {
-        // अब सर्वर से item.wmUrl (वॉटरमार्क वाली) और item.rawUrl (बिना वॉटरमार्क वाली) आ रहा है
-        const div = createThumbCard(item.wmUrl, item.rawUrl, null, `✨ डिज़ाइन ${i + 1}`, false);
-        $('resultGrid').appendChild(div);
-      });
-      setStatus(`✅ ${data.variations.length} डिज़ाइन तैयार!`, 'ok');
-    } else {
-      setStatus('❌ कोई डिज़ाइन नहीं बन पाया, फिर से कोशिश करें।', 'err');
+    let cutImage;
+    try {
+      cutImage = await callRemoveBgAPI(buf, false);
+    } catch (e) {
+      throw new Error("बैकग्राउंड हटाने में समस्या आई");
     }
-    
-  } catch (e) {
-    setStatus('❌ ' + e.message, 'err');
-  } finally {
-    toggleButtons(false);
-  }
-}
 
-// ==========================================
-// 4. VECTOR ONLY
-// ==========================================
-async function runVector() {
-  if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('वेक्टर बन रहा है...'); toggleButtons(true);
-  const fd = new FormData(); fd.append('image', currentFile);
-  try {
-    const r = await fetch('/api/vectorize', { method: 'POST', body: fd });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    $('downloadFull').href = d.url;
-    $('downloadBar').classList.remove('hidden');
-    setStatus('✅ वेक्टर PDF तैयार', 'ok');
-  } catch (e) {
-    setStatus('❌ ' + e.message, 'err');
-  } finally {
-    toggleButtons(false);
-  }
-}
+    const wmPng = saveOut(await addWatermark(cutImage), `layer_cut_wm`);
+    const rawPng = saveOut(cutImage, `layer_cut_raw`);
 
-// ==========================================
-// 5. CUTOUT ONLY
-// ==========================================
-async function runCutout() {
-  if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('कटिंग हो रही है...'); toggleButtons(true);
-  const fd = new FormData(); fd.append('image', currentFile); fd.append('person', 'true');
-  try {
-    const r = await fetch('/api/cutout', { method: 'POST', body: fd });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    
-    // 🔥 यहाँ d.finalRaw पास किया गया है ताकि बिना वॉटरमार्क वाला बटन काम करे
-    const div = createThumbCard(d.preview, d.finalRaw, null, '✂️ कटिंग', false);
-    $('resultGrid').appendChild(div);
-    
-    setStatus('✅ हो गया', 'ok');
-  } catch (e) {
-    setStatus('❌ ' + e.message, 'err');
-  } finally {
-    toggleButtons(false);
-  }
-}
+    let vectorPdf = null;
+    try {
+      const vectorBuf = await callVectorizerAPI(cutImage);
+      vectorPdf = saveOut(vectorBuf, `vector_layer`, 'pdf');
+    } catch (e) {
+      console.log("Vectorizer फेल हुआ:", e.message);
+    }
 
-// ==========================================
-// 6. HD ONLY
-// ==========================================
-async function runUpscale() {
-  if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('HD बन रहा है...'); toggleButtons(true);
-  const fd = new FormData(); fd.append('image', currentFile);
-  try {
-    const r = await fetch('/api/upscale', { method: 'POST', body: fd });
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    
-    // 🔥 यहाँ d.finalRaw पास किया गया है ताकि बिना वॉटरमार्क वाला बटन काम करे
-    const div = createThumbCard(d.preview, d.finalRaw, null, '🔼 HD', false);
-    $('resultGrid').appendChild(div);
-    
-    setStatus('✅ हो गया', 'ok');
-  } catch (e) {
-    setStatus('❌ ' + e.message, 'err');
-  } finally {
-    toggleButtons(false);
-  }
-}
+    results.push({ layerNumber: 1, previewPng: wmPng, rawPng: rawPng, vectorPdf });
 
-// पेज लोड होते ही एडिटर अपडेट करें
-updateEditorText();
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, total: results.length, results });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
+// ✅ Serve HTML (यह हमेशा सबसे आखिर में होना चाहिए)
+app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
+
+// ✅ सर्वर शुरू करें (यह सबसे आखिरी लाइन होनी चाहिए)
+app.listen(PORT, () => { console.log(`🚀 AI Studio → http://localhost:${PORT}`); });
