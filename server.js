@@ -139,12 +139,12 @@ async function generateStylishText(text, style = '3D golden') {
 // ================= 🔥 HELPER: DYNAMIC FULL CIRCLE PATH =================
 // यह function शब्द की लंबाई के हिसाब से radius निकालता है।
 // छोटा शब्द → छोटा गोला, बड़ा शब्द → बड़ा गोला (अपने आप fit)।
-// कोई जबरदस्ती minimum floor नहीं, सिर्फ safety के लिए 1px।
+// कोई जबरदस्ती minimum floor नहीं, सिर्फ safety के लिए 10px।
 function buildFullCirclePath(text, fontSizePx, centerX, centerY) {
   const textWidth = text.length * fontSizePx * 0.6;   // approx text width in px
   // Circumference = 2πr  =>  r = textWidth / (2π)
   let r = textWidth / (2 * Math.PI);
-  if (r < 1) r = 1; // safety only, never visually blocks small words
+  if (r < 10) r = 10; // safety only — 1-2 अक्षर पर path degenerate न हो
   const top = centerY - r;
   const bottom = centerY + r;
   // Do arcs around center (full circle)
