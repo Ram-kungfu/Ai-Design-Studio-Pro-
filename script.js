@@ -10,6 +10,12 @@ let isBold = false;
 let isItalic = false;
 let currentFontSize = 10;
 
+// बटन (handles) के लिए वेरिएबल्स
+let isResizing = false;
+let isRotating = false;
+let startDist = 0;
+let startFontSize = 10;
+
 // --- Tab Switching ---
 function openTab(tabId, btn) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -36,7 +42,6 @@ function handleFile(file) {
     previewImg.src = ev.target.result;
     previewImg.classList.remove('hidden');
     
-    // एडिटर में इमेज दिखाएँ
     const editorBg = $('editorBg');
     editorBg.src = ev.target.result;
     editorBg.style.display = 'block'; 
@@ -46,40 +51,106 @@ function handleFile(file) {
   reader.readAsDataURL(file);
 }
 
-// --- 🔥 Live Drag & Drop Logic ---
+// --- 🔥 Live Drag, Resize, Rotate Logic ---
 const draggableText = $('draggableText');
 const editorContainer = $('editorContainer');
 
 if (draggableText && editorContainer) {
   draggableText.addEventListener('pointerdown', (e) => {
+    if (e.target.classList.contains('handle')) return; 
+    draggableText.classList.add('selected');
     isDragging = true;
     draggableText.style.cursor = 'grabbing';
     e.preventDefault();
   });
 
+  document.addEventListener('pointerdown', (e) => {
+    if (!draggableText.contains(e.target) && e.target !== draggableText) {
+      draggableText.classList.remove('selected');
+    }
+  });
+
   document.addEventListener('pointermove', (e) => {
-    if (!isDragging) return;
     const rect = editorContainer.getBoundingClientRect();
-    let x = e.clientX - rect.left;
-    let y = e.clientY - rect.top;
-    
-    x = Math.max(0, Math.min(x, rect.width));
-    y = Math.max(0, Math.min(y, rect.height));
+    const centerX = rect.left + (currentX / 100) * rect.width;
+    const centerY = rect.top + (currentY / 100) * rect.height;
 
-    currentX = (x / rect.width) * 100;
-    currentY = (y / rect.height) * 100;
+    if (isDragging) {
+      let x = e.clientX - rect.left;
+      let y = e.clientY - rect.top;
+      x = Math.max(0, Math.min(x, rect.width));
+      y = Math.max(0, Math.min(y, rect.height));
 
-    draggableText.style.left = currentX + '%';
-    draggableText.style.top = currentY + '%';
+      currentX = (x / rect.width) * 100;
+      currentY = (y / rect.height) * 100;
+
+      draggableText.style.left = currentX + '%';
+      draggableText.style.top = currentY + '%';
+    }
+
+    if (isResizing) {
+      let dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+      let scaleFactor = dist / startDist;
+      let newSize = Math.round(startFontSize * scaleFactor);
+      newSize = Math.max(2, Math.min(50, newSize)); 
+      
+      currentFontSize = newSize;
+      $('fontSizeSlider').value = currentFontSize;
+      $('fontSizeVal').textContent = currentFontSize;
+      updateEditorText();
+    }
+
+    if (isRotating) {
+      let angleRad = Math.atan2(e.clientY - centerY, e.clientX - centerX);
+      let angleDeg = (angleRad * 180) / Math.PI;
+      currentAngle = Math.round(angleDeg + 90);
+      
+      $('angleSlider').value = currentAngle;
+      $('angleVal').textContent = currentAngle;
+      updateEditorText();
+    }
   });
 
   document.addEventListener('pointerup', () => {
     isDragging = false;
+    isResizing = false;
+    isRotating = false;
     draggableText.style.cursor = 'grab';
   });
 }
 
-// --- 🔥 कलर सिंक और स्लाइडर फंक्शन्स ---
+function setupHandles() {
+  if (document.querySelector('.handle')) return;
+
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'handle resize';
+  
+  const rotateHandle = document.createElement('div');
+  rotateHandle.className = 'handle rotate';
+
+  resizeHandle.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    const rect = editorContainer.getBoundingClientRect();
+    const centerX = rect.left + (currentX / 100) * rect.width;
+    const centerY = rect.top + (currentY / 100) * rect.height;
+    
+    isResizing = true;
+    startDist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
+    startFontSize = currentFontSize;
+    e.preventDefault();
+  });
+
+  rotateHandle.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    isRotating = true;
+    e.preventDefault();
+  });
+
+  draggableText.appendChild(resizeHandle);
+  draggableText.appendChild(rotateHandle);
+}
+
+// --- 🔥 स्लाइडर फंक्शन्स ---
 function syncColorPicker() {
   const selectedColor = $('textColorSelect').value;
   $('textColorPicker').value = selectedColor;
@@ -118,27 +189,22 @@ function toggleItalic() {
   updateEditorText();
 }
 
-// 🔥 CMYK से RGB में बदलने का फंक्शन
 function applyCMYK() {
   const c = parseFloat($('cmykC').value) / 100;
   const m = parseFloat($('cmykM').value) / 100;
   const y = parseFloat($('cmykY').value) / 100;
   const k = parseFloat($('cmykK').value) / 100;
 
-  // CMYK to RGB Math
   let r = Math.round(255 * (1 - c) * (1 - k));
   let g = Math.round(255 * (1 - m) * (1 - k));
   let b = Math.round(255 * (1 - y) * (1 - k));
 
-  // RGB to Hex
   const hex = "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1).toUpperCase();
-  
-  // RGB पिकर और टेक्स्ट को अपडेट करें
   $('textColorPicker').value = hex;
   updateEditorText();
 }
 
-// 🔥 टेक्स्ट को SVG में बदलकर कर्व और स्टाइल्स लाइव दिखाएँ
+// 🔥 WordArt जैसा कर्व और टेक्स्ट अपडेट करने का लॉजिक
 function updateEditorText() {
   if (!draggableText) return;
   const name = $('nameInput').value || 'RAHUL';
@@ -147,7 +213,7 @@ function updateEditorText() {
   const fontWeight = isBold ? 'bold' : 'normal';
   const fontStyle = isItalic ? 'italic' : 'normal';
   
-  const w = 400; // एडिटर की चौड़ाई
+  const w = 400; 
   const h = 150;
   const pxY = h / 2;
   const fontSize = currentFontSize * 4;
@@ -156,24 +222,20 @@ function updateEditorText() {
   let svgContent = '';
 
   if (style === 'vertical') {
-    // खड़ा (Vertical)
     svgContent = `<text x="${w/2}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2" transform="rotate(90 ${w/2} ${pxY})">${name}</text>`;
   } else {
     let pathD = "";
-    if (style === 'round') {
-      // गोल (Round)
-      pathD = `M 40 ${pxY + 30} A ${(w-80)/2} ${(w-80)/2} 0 0 1 ${w-40} ${pxY + 30}`;
-    } else if (style === 'rotate') {
-      // तिरछा (Rotate)
-      pathD = `M 20 ${pxY} L ${w-20} ${pxY}`;
-      transformStr = `rotate(45deg)`; 
-    } else if (currentCurve != 0) {
-      // कर्व स्लाइडर (Curve)
-      let cY = pxY - (currentCurve * 0.8); 
-      pathD = `M 20 ${pxY} Q ${w/2} ${cY} ${w-20} ${pxY}`;
+    
+    const startX = 30;
+    const endX = w - 30;
+    const centerX = w / 2;
+    
+    if (style === 'round' || currentCurve != 0) {
+      let cVal = (style === 'round') ? 50 : currentCurve; 
+      let controlY = pxY - (cVal * 1.5); 
+      pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
     } else {
-      // सीधा / होरिजेंटल (Normal / Horizontal)
-      pathD = `M 20 ${pxY} L ${w-20} ${pxY}`;
+      pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
     }
 
     svgContent = `
@@ -184,14 +246,20 @@ function updateEditorText() {
     `;
   }
 
-  draggableText.innerHTML = `
-    <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="transform: ${transformStr};">
+  const svgWrapper = document.createElement('div');
+  svgWrapper.innerHTML = `
+    <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="transform: ${transformStr}; pointer-events: none;">
       ${svgContent}
     </svg>
   `;
+  
+  const oldSvg = draggableText.querySelector('svg');
+  if (oldSvg) oldSvg.remove();
+  draggableText.insertBefore(svgWrapper.firstElementChild, draggableText.firstChild);
+  
+  setupHandles();
 }
 
-// कस्टम साइज़ बॉक्स दिखाना/छिपाना
 document.getElementById('aspectSelect').addEventListener('change', function() {
   const box = document.getElementById('customSizeBox');
   if (this.value === 'custom') {
@@ -201,7 +269,6 @@ document.getElementById('aspectSelect').addEventListener('change', function() {
   }
 });
 
-// ✅ मैन्युअल टेक्स्ट फिट करें
 function applyManualText() {
   const name = $('nameInput').value;
   if (!name) return alert('पहले नाम लिखें');
@@ -258,7 +325,7 @@ function toggleButtons(disable) {
 }
 
 // ==========================================
-// 1. FULL AUTO (सभी फीचर्स के साथ)
+// 1. FULL AUTO
 // ==========================================
 async function runAuto() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
