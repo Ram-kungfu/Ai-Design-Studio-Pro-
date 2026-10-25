@@ -223,11 +223,18 @@ function calcCircleRadius(text, fontSizePx) {
   return r;
 }
 
+// 🔥 टेक्स्ट हटाने का फंक्शन (नया जोड़ा गया है)
+function clearText() {
+  $('nameInput').value = '';
+  updateEditorText();
+}
+
 // 🔥 टेक्स्ट और स्टाइल अपडेट करने का सही लॉजिक (सभी स्टाइल्स के साथ)
 function updateEditorText() {
   if (!draggableText) return;
   
-  const name = $('nameInput').value;
+  // 🔥 यहाँ 'RAHUL' हटा दिया गया है ताकि खाली होने पर कुछ न दिखे
+  const name = $('nameInput').value; 
   const style = $('textStyleSelect').value;
   const color = $('textColorPicker').value;
   const fontWeight = isBold ? 'bold' : 'normal';
@@ -240,6 +247,14 @@ function updateEditorText() {
   const h = 150;
   const pxY = h / 2;
   const fontSize = currentFontSize * 4;
+
+  // अगर नाम खाली है, तो कुछ भी मत दिखाओ (सिर्फ बटन रहने दो)
+  if (!name) {
+    const oldSvg = draggableText.querySelector('svg');
+    if (oldSvg) oldSvg.remove();
+    setupHandles();
+    return;
+  }
 
   // बॉक्स का रोटेशन (अगर 'तिरछा' चुना है तो 45 डिग्री तिरछा करें)
   let boxRotation = currentAngle;
@@ -453,7 +468,7 @@ async function runSplitAndTrace() {
 }
 
 // ==========================================
-// 3. VARIATIONS (4 डिज़ाइन) - 🔥 यहाँ नया कोड जोड़ दिया गया है
+// 3. VARIATIONS (4 डिज़ाइन)
 // ==========================================
 async function runVariations() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
