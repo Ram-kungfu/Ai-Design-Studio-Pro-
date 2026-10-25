@@ -1,9 +1,11 @@
 const $ = id => document.getElementById(id);
 let currentFile = null;
 
-// ड्रैग एंड ड्रॉप के लिए वेरिएबल्स
+// ड्रैग एंड ड्रॉप और स्लाइडर्स के लिए वेरिएबल्स
 let currentX = 50, currentY = 20;
 let isDragging = false;
+let currentCurve = 0;
+let currentAngle = 0;
 
 // --- Tab Switching ---
 function openTab(tabId, btn) {
@@ -75,7 +77,20 @@ if (draggableText && editorContainer) {
   });
 }
 
-// एडिटर में टेक्स्ट अपडेट करें (Horizontal सहित)
+// 🔥 स्लाइडर्स अपडेट करने वाले फंक्शन्स
+function updateCurveValue() {
+  currentCurve = $('curveSlider').value;
+  $('curveVal').textContent = currentCurve;
+  updateEditorText();
+}
+
+function updateAngleValue() {
+  currentAngle = $('angleSlider').value;
+  $('angleVal').textContent = currentAngle;
+  updateEditorText();
+}
+
+// एडिटर में टेक्स्ट अपडेट करें (Curve, Angle और Horizontal सहित)
 function updateEditorText() {
   if (!draggableText) return;
   const name = $('nameInput').value || 'RAHUL';
@@ -85,16 +100,15 @@ function updateEditorText() {
   draggableText.textContent = name;
   draggableText.style.color = color;
 
-  if (style === 'rotate') {
-    draggableText.style.transform = 'translate(-50%, -50%) rotate(-15deg)';
-  } else if (style === 'vertical') {
+  // एंगल और स्टाइल के हिसाब से घुमाएँ
+  let rotateStr = `rotate(${currentAngle}deg)`; 
+  if (style === 'vertical') {
     draggableText.style.writingMode = 'vertical-rl';
-    draggableText.style.transform = 'translate(-50%, -50%)';
   } else {
-    // Normal और Horizontal दोनों के लिए सीधा रहेगा
     draggableText.style.writingMode = 'horizontal-tb';
-    draggableText.style.transform = 'translate(-50%, -50%)';
   }
+
+  draggableText.style.transform = `translate(-50%, -50%) ${rotateStr}`;
 }
 
 // कस्टम साइज़ बॉक्स दिखाना/छिपाना
@@ -122,6 +136,10 @@ function applyManualText() {
   fd.append('textY', currentY);
   fd.append('textStyle', $('textStyleSelect').value);
   fd.append('textColor', $('textColorSelect').value);
+  
+  // 🔥 Curve और Angle डेटा जोड़ें
+  fd.append('curve', currentCurve);
+  fd.append('angle', currentAngle);
 
   fetch('/api/manual-text', { method: 'POST', body: fd })
     .then(r => r.json())
@@ -159,7 +177,7 @@ function toggleButtons(disable) {
 }
 
 // ==========================================
-// 1. FULL AUTO (3D टेक्स्ट और कस्टम साइज़ के साथ)
+// 1. FULL AUTO (3D टेक्स्ट, कस्टम साइज़, Curve & Angle के साथ)
 // ==========================================
 async function runAuto() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
@@ -175,6 +193,10 @@ async function runAuto() {
   fd.append('customW', $('customW').value);
   fd.append('customH', $('customH').value);
   fd.append('use3d', $('use3dText').checked ? 'true' : 'false');
+  
+  // 🔥 Curve और Angle डेटा जोड़ें
+  fd.append('curve', currentCurve);
+  fd.append('angle', currentAngle);
 
   try {
     const r = await fetch('/api/auto', { method: 'POST', body: fd });
@@ -313,4 +335,4 @@ async function runUpscale() {
   } finally { 
     toggleButtons(false); 
   }
-}
+    }
