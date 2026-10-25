@@ -74,16 +74,23 @@
       </div>
     </div>
 
-    <!-- 🔥 टेक्स्ट स्टाइल (Horizontal जोड़ा गया) -->
+    <!-- 🔥 टेक्स्ट स्टाइल और स्लाइडर्स -->
     <div style="margin-bottom: 12px;">
       <label>टेक्स्ट स्टाइल:</label>
       <select id="textStyleSelect" onchange="updateEditorText()">
         <option value="normal">सीधा (Normal)</option>
         <option value="horizontal">होरिजेंटल (Horizontal)</option>
-        <option value="rotate">तिरछा (Rotate)</option>
-        <option value="round">गोल (Round)</option>
         <option value="vertical">खड़ा (Vertical)</option>
       </select>
+    </div>
+
+    <!-- 🔥 NEW: Custom Curve और Angle स्लाइडर -->
+    <div style="margin-bottom: 12px; background: #0f172a; padding: 10px; border-radius: 8px;">
+      <label>वक्रता (Curve): <span id="curveVal" style="color:#fbbf24;">0</span></label>
+      <input type="range" id="curveSlider" min="-100" max="100" value="0" oninput="updateCurveValue()" style="width: 100%;">
+      
+      <label style="margin-top: 8px;">कोण (Angle): <span id="angleVal" style="color:#fbbf24;">0</span>°</label>
+      <input type="range" id="angleSlider" min="-180" max="180" value="0" oninput="updateAngleValue()" style="width: 100%;">
     </div>
 
     <!-- टेक्स्ट का रंग -->
