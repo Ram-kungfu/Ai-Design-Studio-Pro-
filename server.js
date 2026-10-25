@@ -14,7 +14,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(__dirname)); 
+app.use(express.static(__dirname));
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const OUTPUT_DIR = path.join(__dirname, 'outputs');
@@ -111,12 +111,12 @@ async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
 async function generateStylishText(text, style = '3D golden') {
   try {
     const prompt = `Generate a beautiful, high quality, transparent PNG (no background) of the text "${text}" written in ${style} font style. Make it look premium, 3D, and print-ready. The text should be perfectly aligned and centered.`;
-    
+
     const payload = {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { responseModalities: ['TEXT', 'IMAGE'] }
     };
-    
+
     const r = await axios.post(`${GEM_URL}gemini-3.1-flash-image:generateContent`, payload, {
       headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' }, timeout: 180000
     });
@@ -134,6 +134,24 @@ async function generateStylishText(text, style = '3D golden') {
     console.error("Stylish Text Error:", e.message);
     return null;
   }
+}
+
+// ================= 🔥 HELPER: DYNAMIC FULL CIRCLE PATH =================
+// यह function शब्द की लंबाई के हिसाब से radius निकालता है।
+// छोटा शब्द → छोटा गोला, बड़ा शब्द → बड़ा गोला (अपने आप fit)।
+// कोई जबरदस्ती minimum floor नहीं, सिर्फ safety के लिए 1px।
+function buildFullCirclePath(text, fontSizePx, centerX, centerY) {
+  const textWidth = text.length * fontSizePx * 0.6;   // approx text width in px
+  // Circumference = 2πr  =>  r = textWidth / (2π)
+  let r = textWidth / (2 * Math.PI);
+  if (r < 1) r = 1; // safety only, never visually blocks small words
+  const top = centerY - r;
+  const bottom = centerY + r;
+  // Do arcs around center (full circle)
+  return {
+    radius: r,
+    path: `M ${centerX} ${top} A ${r} ${r} 0 1 1 ${centerX} ${bottom} A ${r} ${r} 0 1 1 ${centerX} ${top}`
+  };
 }
 
 // 6. Compose (सभी नए फीचर्स के साथ - WordArt Curve, Full Circle, RGB, Bold, Italic, Font Size)
@@ -166,43 +184,44 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     const tx = Math.floor((W - textMeta.width) / 2);
     const ty = Math.floor(H * 0.15);
     composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
-  } 
+  }
   // सिंपल टेक्स्ट (WordArt Curve, Full Circle, Angle, Color, Bold, Italic के साथ)
   else if (name) {
-    const fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100)); 
+    const fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100));
     const pxX = W / 2;
-    const pxY = H * 0.15;
-    
-    const textLength = name.length * fs2 * 0.6; 
-    const startX = pxX - textLength / 2;
-    const endX = pxX + textLength / 2;
-    
+    const pxY = H * 0.25;   // 🔥 गोला बनाने के लिए center थोड़ा नीचे, ताकि पूरा गोला canvas में fit हो
+
     let pathD = "";
     const curve = parseFloat(curveVal);
-    
-    // 🔥 WordArt Curve & Full Circle Logic (Dynamic Radius)
+    const uniqueId = "path_" + Date.now();
+
     if (textStyle === 'full_circle') {
-        let r = Math.max(60, (name.length * fs2 * 0.6) / (2 * Math.PI));
-        pathD = `M ${pxX} ${pxY - r} a ${r},${r} 0 1,1 0,${r*2} a ${r},${r} 0 1,1 0,${-r*2}`;
+      // 🔥 DYNAMIC FULL CIRCLE — छोटा/बड़ा अपने आप
+      const circle = buildFullCirclePath(name, fs2, pxX, pxY);
+      pathD = circle.path;
     } else if (curve === 0) {
+      const textLength = name.length * fs2 * 0.6;
+      const startX = pxX - textLength / 2;
+      const endX = pxX + textLength / 2;
       pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
     } else {
-      const controlY = pxY - (curve * 3); 
+      const textLength = name.length * fs2 * 0.6;
+      const startX = pxX - textLength / 2;
+      const endX = pxX + textLength / 2;
+      const controlY = pxY - (curve * 3);
       pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
     }
-    
-    const uniqueId = "path_" + Date.now();
-    
+
     const svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
       <path id="${uniqueId}" d="${pathD}" fill="transparent" />
       <text font-family="sans-serif" font-weight="${boldVal}" font-style="${italicVal}" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="${Math.max(2, Math.floor(fs2/20))}" transform="rotate(${angleVal} ${pxX} ${pxY})">
         <textPath href="#${uniqueId}" startOffset="50%" text-anchor="middle">${name}</textPath>
       </text>
     </svg>`;
-    
+
     composed = await sharp(composed).composite([{ input: Buffer.from(svgText), top: 0, left: 0 }]).png().toBuffer();
   }
-  
+
   return composed;
 }
 
@@ -228,17 +247,17 @@ async function splitIntoLayersUsingPython(buffer) {
   try {
     const fd = new FormData();
     fd.append('file', buffer, { filename: 'design.png' });
-    
+
     const PYTHON_SAM_URL = process.env.SAM_SERVER_URL || 'http://localhost:8000/split-layers';
     console.log("⏳ Python SAM सर्वर से लेयर्स माँग रहे हैं...");
-    
+
     const r = await axios.post(PYTHON_SAM_URL, fd, {
       headers: { ...fd.getHeaders() },
       timeout: 300000
     });
-    
+
     if (!r.data.success) throw new Error(r.data.error || "SAM failed");
-    
+
     const layerBuffers = r.data.layers.map(base64Str => Buffer.from(base64Str, 'base64'));
     console.log(`✅ SAM से ${layerBuffers.length} लेयर्स मिल गईं!`);
     return layerBuffers;
@@ -294,7 +313,7 @@ app.post('/api/split-and-trace', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
     const rawLayers = await splitIntoLayersUsingPython(buf);
-    
+
     if (rawLayers.length === 0) {
       throw new Error("SAM कोई भी लेयर नहीं बना पाया।");
     }
@@ -396,7 +415,7 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
     const { name = '', style = '3D golden', aspect = '2:3', customW, customH } = req.body;
-    
+
     if (!name) throw new Error("कृपया नाम लिखें");
 
     const textImgBuf = await generateStylishText(name, style);
@@ -404,7 +423,7 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
 
     const finalDesign = await callKittlComposeAPI(null, buf, aspect, null, textImgBuf, customW, customH);
     const wmDesign = await addWatermark(finalDesign);
-    
+
     const finalPreview = saveOut(wmDesign, '3d_design_wm');
     const finalRaw = saveOut(finalDesign, '3d_design_raw');
 
@@ -420,7 +439,7 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
     const { name = '', textX = 50, textY = 20, textStyle = 'normal', textColor = '#ffffff', curve = 0, angle = 0, fontSize = 10, isBold = 'normal', isItalic = 'normal' } = req.body;
-    
+
     if (!name) throw new Error("कृपया नाम लिखें");
 
     const imgMeta = await sharp(buf).metadata();
@@ -444,25 +463,24 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
       const startX = pxX - textLength / 2;
       const endX = pxX + textLength / 2;
       let pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
-      
+
       const curveFloat = parseFloat(curve);
-      
-      // 🔥 WordArt Curve & Full Circle Logic (Dynamic Radius)
+      const uniqueId = "manual_path_" + Date.now();
+
       if (textStyle === 'full_circle') {
-        let r = Math.max(60, (name.length * fs2 * 0.6) / (2 * Math.PI));
-        pathD = `M ${pxX} ${pxY - r} a ${r},${r} 0 1,1 0,${r*2} a ${r},${r} 0 1,1 0,${-r*2}`;
+        // 🔥 DYNAMIC FULL CIRCLE — छोटा/बड़ा अपने आप fit
+        const circle = buildFullCirclePath(name, fs2, pxX, pxY);
+        pathD = circle.path;
       } else if (textStyle === 'round') {
-        const controlY = pxY - (50 * 3); 
+        const controlY = pxY - (50 * 3);
         pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
       } else if (textStyle === 'rotate') {
-        finalTransform = `rotate(45 ${pxX} ${pxY})`; 
+        finalTransform = `rotate(45 ${pxX} ${pxY})`;
       } else if (curveFloat !== 0) {
         const controlY = pxY - (curveFloat * 3);
         pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
       }
 
-      const uniqueId = "manual_path_" + Date.now();
-      
       svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
         <path id="${uniqueId}" d="${pathD}" fill="transparent" />
         <text font-family="sans-serif" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="${Math.max(2, Math.floor(fs2/20))}" transform="${finalTransform}">
@@ -472,7 +490,7 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
     }
 
     const finalImg = await sharp(buf).composite([{ input: Buffer.from(svgText), top: 0, left: 0 }]).png().toBuffer();
-    
+
     const preview = saveOut(await addWatermark(finalImg), 'manual_text_wm');
     const finalRaw = saveOut(finalImg, 'manual_text_raw');
 
