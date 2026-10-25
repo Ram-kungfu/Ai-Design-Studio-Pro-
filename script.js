@@ -42,6 +42,31 @@ let isRotating = false;
 let startDist = 0;
 let startFontSize = 10;
 
+// 🔥 नाम में <, >, & जैसे अक्षर SVG/HTML को तोड़ें नहीं, इसलिए सुरक्षित बनाने का फंक्शन
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// 🔥 नाम की सारी सेटिंग्स (पोज़िशन, स्टाइल, रंग, साइज़) एक जगह से सर्वर को भेजने के लिए
+// (पहले Auto और Variations में textX/textY जा ही नहीं रहे थे, इसलिए नाम गलत जगह छपता था/छूट जाता था)
+function appendTextSettings(fd) {
+  fd.append('name', $('nameInput').value);
+  fd.append('textX', currentX);
+  fd.append('textY', currentY);
+  fd.append('curve', currentCurve);
+  fd.append('angle', currentAngle);
+  fd.append('textColor', $('textColorPicker').value);
+  fd.append('fontSize', currentFontSize);
+  fd.append('isBold', isBold ? 'bold' : 'normal');
+  fd.append('isItalic', isItalic ? 'italic' : 'normal');
+  fd.append('textStyle', $('textStyleSelect').value);
+  if ($('fontFamilySelect')) fd.append('fontFamily', $('fontFamilySelect').value);
+}
+
 // --- Tab Switching ---
 function openTab(tabId, btn) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -82,6 +107,9 @@ const draggableText = $('draggableText');
 const editorContainer = $('editorContainer');
 
 if (draggableText && editorContainer) {
+  // 🔥 मोबाइल पर टेक्स्ट खींचते समय पेज स्क्रॉल न हो
+  draggableText.style.touchAction = 'none';
+
   // टेक्स्ट पर क्लिक करने पर सेलेक्ट (बॉर्डर और बटन दिखें)
   draggableText.addEventListener('pointerdown', (e) => {
     if (e.target.classList.contains('handle')) return;
@@ -157,9 +185,11 @@ function setupHandles() {
 
   const resizeHandle = document.createElement('div');
   resizeHandle.className = 'handle resize';
+  resizeHandle.style.touchAction = 'none';
 
   const rotateHandle = document.createElement('div');
   rotateHandle.className = 'handle rotate';
+  rotateHandle.style.touchAction = 'none';
 
   // Resize (छोटा-बड़ा) बटन का लॉजिक
   resizeHandle.addEventListener('pointerdown', (e) => {
@@ -193,19 +223,20 @@ function syncColorPicker() {
 }
 
 function updateCurveValue() {
-  currentCurve = $('curveSlider').value;
+  currentCurve = parseFloat($('curveSlider').value) || 0;
   $('curveVal').textContent = currentCurve;
   updateEditorText();
 }
 
 function updateAngleValue() {
-  currentAngle = $('angleSlider').value;
+  // 🔥 Number में बदला ताकि 'तिरछा' में "30"+45 = "3045" जैसी गड़बड़ी न हो
+  currentAngle = parseFloat($('angleSlider').value) || 0;
   $('angleVal').textContent = currentAngle;
   updateEditorText();
 }
 
 function updateFontSize() {
-  currentFontSize = $('fontSizeSlider').value;
+  currentFontSize = parseFloat($('fontSizeSlider').value) || 10;
   $('fontSizeVal').textContent = currentFontSize;
   updateEditorText();
 }
@@ -260,7 +291,8 @@ function updateEditorText() {
   if (!draggableText) return;
   
   // 🔥 यहाँ 'RAHUL' हटा दिया गया है ताकि खाली होने पर कुछ न दिखे
-  const name = $('nameInput').value; 
+  const rawName = $('nameInput').value; 
+  const name = escapeHtml(rawName); // SVG में डालने के लिए सुरक्षित नाम
   const style = $('textStyleSelect').value;
   const color = $('textColorPicker').value;
   const fontWeight = isBold ? 'bold' : 'normal';
@@ -275,7 +307,7 @@ function updateEditorText() {
   const fontSize = currentFontSize * 4;
 
   // अगर नाम खाली है, तो कुछ भी मत दिखाओ (सिर्फ बटन रहने दो)
-  if (!name) {
+  if (!rawName) {
     const oldSvg = draggableText.querySelector('svg');
     if (oldSvg) oldSvg.remove();
     setupHandles();
@@ -283,9 +315,9 @@ function updateEditorText() {
   }
 
   // बॉक्स का रोटेशन (अगर 'तिरछा' चुना है तो 45 डिग्री तिरछा करें)
-  let boxRotation = currentAngle;
+  let boxRotation = Number(currentAngle) || 0;
   if (style === 'rotate') {
-    boxRotation = currentAngle + 45; 
+    boxRotation = boxRotation + 45; 
   }
   draggableText.style.transform = `translate(-50%, -50%) rotate(${boxRotation}deg)`;
 
@@ -311,12 +343,12 @@ function updateEditorText() {
   else {
     if (style === 'full_circle') {
       // पूरा गोल (Zero) - बिल्कुल सीधा और परफेक्ट
-      const r = calcCircleRadius(name, fontSize);
+      const r = calcCircleRadius(rawName, fontSize);
       pathD = `M ${centerX} ${pxY - r} a ${r},${r} 0 1,1 0,${r * 2} a ${r},${r} 0 1,1 0,${-r * 2}`;
     } 
     else if (style === 'round') {
-      // गोल (Round) - पूरा ऊपर की तरफ मुड़ा हुआ, एकदम सीधा
-      let controlY = pxY - (50 * 2); // ऊपर की तरफ मोड़
+      // गोल (Round) - पूरा ऊपर की तरफ मुड़ा हुआ, एकदम सीधा
+      let controlY = pxY - (50 * 2); // ऊपर की तरफ मोड़
       pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
     } 
     else if (curveVal !== 0 && !isNaN(curveVal)) {
@@ -488,20 +520,13 @@ async function runAuto() {
   const fd = new FormData();
   fd.append('image', currentFile);
   fd.append('prompt', $('promptInput').value || 'luxury gold background');
-  fd.append('name', $('nameInput').value);
   fd.append('aspect', $('aspectSelect').value);
   fd.append('customW', $('customW').value);
   fd.append('customH', $('customH').value);
   fd.append('use3d', $('use3dText').checked ? 'true' : 'false');
-  fd.append('curve', currentCurve);
-  fd.append('angle', currentAngle);
-  fd.append('textColor', $('textColorPicker').value);
-  fd.append('fontSize', currentFontSize);
-  fd.append('isBold', isBold ? 'bold' : 'normal');
-  fd.append('isItalic', isItalic ? 'italic' : 'normal');
-  fd.append('textStyle', $('textStyleSelect').value);
-  
-  if ($('fontFamilySelect')) fd.append('fontFamily', $('fontFamilySelect').value);
+
+  // 🔥 नाम + पोज़िशन (textX/textY) + स्टाइल सब एक साथ भेजें, ताकि नाम ठीक वहीं छपे जहाँ एडिटर में रखा है
+  appendTextSettings(fd);
 
   try {
     const r = await fetch('/api/auto', { method: 'POST', body: fd });
@@ -539,8 +564,8 @@ async function runSplitAndTrace() {
     if (data.error) throw new Error(data.error);
     const grid = $('layerResults');
     data.results.forEach(res => {
-      // 🔥 यहाँ नए कार्ड फंक्शन का इस्तेमाल हुआ है
-      const div = createThumbCard(res.previewPng, res.previewPng, res.vectorPdf, `लेयर ${res.layerNumber}`, true);
+      // 🔥 अब बिना वॉटरमार्क वाली इमेज (res.rawPng) पास हो रही है (पहले दोनों बटन पर वॉटरमार्क वाली ही जाती थी)
+      const div = createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, `लेयर ${res.layerNumber}`, true);
       grid.appendChild(div);
     });
     setStatus('✅ लेयर्स तैयार!', 'ok');
@@ -548,16 +573,20 @@ async function runSplitAndTrace() {
 }
 
 // ==========================================
-// 3. VARIATIONS (4 डिज़ाइन)
+// 3. VARIATIONS (5 डिज़ाइन)
 // ==========================================
 async function runVariations() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('4 नए डिज़ाइन बन रहे हैं (इसमें 15-20 सेकंड लग सकते हैं)...'); toggleButtons(true);
+  clearGrid(); setStatus('5 नए डिज़ाइन बन रहे हैं (इसमें 1-2 मिनट लग सकते हैं)...'); toggleButtons(true);
   
   const fd = new FormData();
   fd.append('image', currentFile);
-  fd.append('name', $('nameInput').value);
   fd.append('aspect', $('aspectSelect').value);
+  fd.append('customW', $('customW').value);
+  fd.append('customH', $('customH').value);
+
+  // 🔥 पहले सिर्फ नाम जा रहा था; अब पोज़िशन, रंग, साइज़, स्टाइल सब जा रहा है ताकि नाम हर डिज़ाइन में सही छपे
+  appendTextSettings(fd);
 
   try {
     const r = await fetch('/api/variations', { method: 'POST', body: fd });
