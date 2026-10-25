@@ -189,10 +189,21 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     let pathD = "";
     const curve = parseFloat(curveVal);
     const uniqueId = "path_" + Date.now();
+    let extraTransform = "";
+
+    if (textStyle === 'rotate') {
+      extraTransform = `transform="rotate(45 ${pxX} ${pxY})"`;
+    }
 
     if (textStyle === 'full_circle') {
       const circle = buildFullCirclePath(name, fs2, pxX, pxY);
       pathD = circle.path;
+    } else if (textStyle === 'round') {
+      // 🔥 Round फिक्स: सीधा ऊपर की तरफ
+      const controlY = pxY - (50 * 3); 
+      const startX = pxX - 200;
+      const endX = pxX + 200;
+      pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
     } else if (curve === 0) {
       const textLength = name.length * fs2 * 0.6;
       const startX = pxX - textLength / 2;
@@ -206,10 +217,9 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
       pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
     }
 
-    // 🔥 font-family और stroke में सुधार किया गया है
     const svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
       <path id="${uniqueId}" d="${pathD}" fill="transparent" />
-      <text font-family="${fontFamilyVal}" font-weight="${boldVal}" font-style="${italicVal}" font-size="${fs2}" fill="${textColor}" transform="rotate(${angleVal} ${pxX} ${pxY})">
+      <text font-family="${fontFamilyVal}" font-weight="${boldVal}" font-style="${italicVal}" font-size="${fs2}" fill="${textColor}" ${extraTransform}>
         <textPath href="#${uniqueId}" startOffset="50%" text-anchor="middle">${name}</textPath>
       </text>
     </svg>`;
@@ -433,7 +443,6 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
 app.post('/api/manual-text', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
-    // 🔥 यहाँ fontFamily जोड़ दिया गया है
     const { name = '', textX = 50, textY = 20, textStyle = 'normal', textColor = '#ffffff', curve = 0, angle = 0, fontSize = 10, isBold = 'normal', isItalic = 'normal', fontFamily = 'Arial, sans-serif' } = req.body;
 
     if (!name) throw new Error("कृपया नाम लिखें");
@@ -467,7 +476,8 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
         const circle = buildFullCirclePath(name, fs2, pxX, pxY);
         pathD = circle.path;
       } else if (textStyle === 'round') {
-        const controlY = pxY - (50 * 3);
+        // 🔥 Round फिक्स: सीधा ऊपर की तरफ
+        const controlY = pxY - (50 * 3); 
         pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
       } else if (textStyle === 'rotate') {
         finalTransform = `rotate(45 ${pxX} ${pxY})`;
@@ -476,7 +486,6 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
         pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
       }
 
-      // 🔥 यहाँ भी fontFamily जोड़ दिया गया है और stroke हटा दिया गया है
       svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
         <path id="${uniqueId}" d="${pathD}" fill="transparent" />
         <text font-family="${fontFamily}" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" transform="${finalTransform}">
