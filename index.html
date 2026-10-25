@@ -24,21 +24,38 @@
 
   <section class="card">
     <h2>2️⃣ सेटिंग्स</h2>
-    <div class="grid-2">
-      <div>
-        <label>नाम / टेक्स्ट:</label>
-        <input type="text" id="nameInput" placeholder="e.g. RAHUL" />
-      </div>
-      <div>
-        <label>साइज़:</label>
-        <select id="aspectSelect">
-          <option value="2:3">T-Shirt (2:3)</option>
-          <option value="1:1">Square (1:1)</option>
-          <option value="3:2">Poster (3:2)</option>
-        </select>
+    
+    <!-- नाम / टेक्स्ट और 3D चेकबॉक्स -->
+    <div style="margin-bottom: 12px;">
+      <label>नाम / टेक्स्ट:</label>
+      <input type="text" id="nameInput" placeholder="e.g. RAHUL" />
+      
+      <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="use3dText" style="width: auto; transform: scale(1.2);">
+        <label for="use3dText" style="margin: 0; cursor: pointer; color: #fbbf24;">✨ नाम को 3D स्टाइल में बनाएँ (AI)</label>
       </div>
     </div>
-    <label>AI बैकग्राउंड प्रॉम्प्ट:</label>
+
+    <!-- साइज़ और कस्टम साइज़ -->
+    <div>
+      <label>साइज़:</label>
+      <select id="aspectSelect">
+        <option value="2:3">T-Shirt (2:3)</option>
+        <option value="1:1">Square (1:1)</option>
+        <option value="3:2">Poster (3:2)</option>
+        <option value="custom">Custom Size (कस्टम साइज़)</option>
+      </select>
+      
+      <!-- कस्टम साइज़ के लिए बॉक्स (शुरू में छिपा रहेगा) -->
+      <div id="customSizeBox" style="display: none; margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 8px; border: 1px dashed #475569;">
+        <label>चौड़ाई (Width in pixels):</label>
+        <input type="number" id="customW" placeholder="e.g. 2000" style="margin-bottom: 8px;">
+        <label>ऊँचाई (Height in pixels):</label>
+        <input type="number" id="customH" placeholder="e.g. 3000">
+      </div>
+    </div>
+
+    <label style="margin-top: 12px;">AI बैकग्राउंड प्रॉम्प्ट:</label>
     <textarea id="promptInput" rows="2" placeholder="gold luxury background"></textarea>
   </section>
 
