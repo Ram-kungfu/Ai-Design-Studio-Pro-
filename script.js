@@ -6,6 +6,9 @@ let currentX = 50, currentY = 20;
 let isDragging = false;
 let currentCurve = 0;
 let currentAngle = 0;
+let isBold = false;
+let isItalic = false;
+let currentFontSize = 10;
 
 // --- Tab Switching ---
 function openTab(tabId, btn) {
@@ -68,7 +71,6 @@ if (draggableText && editorContainer) {
 
     draggableText.style.left = currentX + '%';
     draggableText.style.top = currentY + '%';
-    draggableText.style.transform = 'translate(-50%, -50%)';
   });
 
   document.addEventListener('pointerup', () => {
@@ -77,7 +79,13 @@ if (draggableText && editorContainer) {
   });
 }
 
-// 🔥 स्लाइडर्स अपडेट करने वाले फंक्शन्स
+// --- 🔥 कलर सिंक और स्लाइडर फंक्शन्स ---
+function syncColorPicker() {
+  const selectedColor = $('textColorSelect').value;
+  $('textColorPicker').value = selectedColor;
+  updateEditorText();
+}
+
 function updateCurveValue() {
   currentCurve = $('curveSlider').value;
   $('curveVal').textContent = currentCurve;
@@ -90,25 +98,77 @@ function updateAngleValue() {
   updateEditorText();
 }
 
-// एडिटर में टेक्स्ट अपडेट करें (Curve, Angle और Horizontal सहित)
+function updateFontSize() {
+  currentFontSize = $('fontSizeSlider').value;
+  $('fontSizeVal').textContent = currentFontSize;
+  updateEditorText();
+}
+
+function toggleBold() {
+  isBold = !isBold;
+  $('boldBtn').style.background = isBold ? '#fbbf24' : '#334155';
+  $('boldBtn').style.color = isBold ? '#000' : '#fff';
+  updateEditorText();
+}
+
+function toggleItalic() {
+  isItalic = !isItalic;
+  $('italicBtn').style.background = isItalic ? '#fbbf24' : '#334155';
+  $('italicBtn').style.color = isItalic ? '#000' : '#fff';
+  updateEditorText();
+}
+
+// 🔥 टेक्स्ट को SVG में बदलकर कर्व और स्टाइल्स लाइव दिखाएँ
 function updateEditorText() {
   if (!draggableText) return;
   const name = $('nameInput').value || 'RAHUL';
   const style = $('textStyleSelect').value;
-  const color = $('textColorSelect').value;
+  const color = $('textColorPicker').value;
+  const fontWeight = isBold ? 'bold' : 'normal';
+  const fontStyle = isItalic ? 'italic' : 'normal';
   
-  draggableText.textContent = name;
-  draggableText.style.color = color;
+  const w = 400; // एडिटर की चौड़ाई
+  const h = 150;
+  const pxY = h / 2;
+  const fontSize = currentFontSize * 4;
 
-  // एंगल और स्टाइल के हिसाब से घुमाएँ
-  let rotateStr = `rotate(${currentAngle}deg)`; 
+  let transformStr = `rotate(${currentAngle}deg)`;
+  let svgContent = '';
+
   if (style === 'vertical') {
-    draggableText.style.writingMode = 'vertical-rl';
+    // खड़ा (Vertical)
+    svgContent = `<text x="${w/2}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2" transform="rotate(90 ${w/2} ${pxY})">${name}</text>`;
   } else {
-    draggableText.style.writingMode = 'horizontal-tb';
+    let pathD = "";
+    if (style === 'round') {
+      // गोल (Round)
+      pathD = `M 40 ${pxY + 30} A ${(w-80)/2} ${(w-80)/2} 0 0 1 ${w-40} ${pxY + 30}`;
+    } else if (style === 'rotate') {
+      // तिरछा (Rotate)
+      pathD = `M 20 ${pxY} L ${w-20} ${pxY}`;
+      transformStr = `rotate(45deg)`; 
+    } else if (currentCurve != 0) {
+      // कर्व स्लाइडर (Curve)
+      let cY = pxY - (currentCurve * 0.8); 
+      pathD = `M 20 ${pxY} Q ${w/2} ${cY} ${w-20} ${pxY}`;
+    } else {
+      // सीधा / होरिजेंटल (Normal / Horizontal)
+      pathD = `M 20 ${pxY} L ${w-20} ${pxY}`;
+    }
+
+    svgContent = `
+      <path id="livePath" d="${pathD}" fill="transparent" />
+      <text font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2">
+        <textPath href="#livePath" startOffset="50%" text-anchor="middle">${name}</textPath>
+      </text>
+    `;
   }
 
-  draggableText.style.transform = `translate(-50%, -50%) ${rotateStr}`;
+  draggableText.innerHTML = `
+    <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="transform: ${transformStr};">
+      ${svgContent}
+    </svg>
+  `;
 }
 
 // कस्टम साइज़ बॉक्स दिखाना/छिपाना
@@ -135,11 +195,12 @@ function applyManualText() {
   fd.append('textX', currentX);
   fd.append('textY', currentY);
   fd.append('textStyle', $('textStyleSelect').value);
-  fd.append('textColor', $('textColorSelect').value);
-  
-  // 🔥 Curve और Angle डेटा जोड़ें
+  fd.append('textColor', $('textColorPicker').value);
   fd.append('curve', currentCurve);
   fd.append('angle', currentAngle);
+  fd.append('fontSize', currentFontSize);
+  fd.append('isBold', isBold ? 'bold' : 'normal');
+  fd.append('isItalic', isItalic ? 'italic' : 'normal');
 
   fetch('/api/manual-text', { method: 'POST', body: fd })
     .then(r => r.json())
@@ -177,7 +238,7 @@ function toggleButtons(disable) {
 }
 
 // ==========================================
-// 1. FULL AUTO (3D टेक्स्ट, कस्टम साइज़, Curve & Angle के साथ)
+// 1. FULL AUTO (सभी फीचर्स के साथ)
 // ==========================================
 async function runAuto() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
@@ -188,15 +249,15 @@ async function runAuto() {
   fd.append('prompt', $('promptInput').value || 'luxury gold background');
   fd.append('name', $('nameInput').value);
   fd.append('aspect', $('aspectSelect').value);
-  
-  // कस्टम साइज़ और 3D डेटा जोड़ें
   fd.append('customW', $('customW').value);
   fd.append('customH', $('customH').value);
   fd.append('use3d', $('use3dText').checked ? 'true' : 'false');
-  
-  // 🔥 Curve और Angle डेटा जोड़ें
   fd.append('curve', currentCurve);
   fd.append('angle', currentAngle);
+  fd.append('textColor', $('textColorPicker').value);
+  fd.append('fontSize', currentFontSize);
+  fd.append('isBold', isBold ? 'bold' : 'normal');
+  fd.append('isItalic', isItalic ? 'italic' : 'normal');
 
   try {
     const r = await fetch('/api/auto', { method: 'POST', body: fd });
@@ -222,16 +283,12 @@ async function runAuto() {
 // ==========================================
 async function runSplitAndTrace() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('SAM लेयर्स को अलग कर रहा है और वेक्टर बना रहा है... (इसमें 1-2 मिनट लग सकते हैं)'); toggleButtons(true);
-  
-  const fd = new FormData();
-  fd.append('image', currentFile);
-  
+  clearGrid(); setStatus('SAM लेयर्स को अलग कर रहा है...'); toggleButtons(true);
+  const fd = new FormData(); fd.append('image', currentFile);
   try {
     const r = await fetch('/api/split-and-trace', { method: 'POST', body: fd });
     const data = await r.json();
     if (data.error) throw new Error(data.error);
-    
     const grid = $('layerResults');
     data.results.forEach(res => {
       const div = document.createElement('div');
@@ -244,12 +301,8 @@ async function runSplitAndTrace() {
       `;
       grid.appendChild(div);
     });
-    setStatus('✅ लेयर्स और वेक्टर तैयार!', 'ok');
-  } catch (e) { 
-    setStatus('❌ ' + e.message, 'err'); 
-  } finally { 
-    toggleButtons(false); 
-  }
+    setStatus('✅ लेयर्स तैयार!', 'ok');
+  } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
 }
 
 // ==========================================
@@ -335,4 +388,7 @@ async function runUpscale() {
   } finally { 
     toggleButtons(false); 
   }
-    }
+}
+
+// पेज लोड होते ही एडिटर अपडेट करें
+updateEditorText();
