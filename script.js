@@ -56,6 +56,7 @@ const draggableText = $('draggableText');
 const editorContainer = $('editorContainer');
 
 if (draggableText && editorContainer) {
+  // टेक्स्ट पर क्लिक करने पर सेलेक्ट (बॉर्डर और बटन दिखें)
   draggableText.addEventListener('pointerdown', (e) => {
     if (e.target.classList.contains('handle')) return; 
     draggableText.classList.add('selected');
@@ -64,6 +65,7 @@ if (draggableText && editorContainer) {
     e.preventDefault();
   });
 
+  // बाहर क्लिक करने पर सेलेक्शन हटाएँ
   document.addEventListener('pointerdown', (e) => {
     if (!draggableText.contains(e.target) && e.target !== draggableText) {
       draggableText.classList.remove('selected');
@@ -75,6 +77,7 @@ if (draggableText && editorContainer) {
     const centerX = rect.left + (currentX / 100) * rect.width;
     const centerY = rect.top + (currentY / 100) * rect.height;
 
+    // 🔥 ड्रैग (Drag) करना
     if (isDragging) {
       let x = e.clientX - rect.left;
       let y = e.clientY - rect.top;
@@ -88,6 +91,7 @@ if (draggableText && editorContainer) {
       draggableText.style.top = currentY + '%';
     }
 
+    // 🔥 छोटा-बड़ा करना (Resize)
     if (isResizing) {
       let dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
       let scaleFactor = dist / startDist;
@@ -100,9 +104,11 @@ if (draggableText && editorContainer) {
       updateEditorText();
     }
 
+    // 🔥 घुमाना (Rotate)
     if (isRotating) {
       let angleRad = Math.atan2(e.clientY - centerY, e.clientX - centerX);
       let angleDeg = (angleRad * 180) / Math.PI;
+      
       currentAngle = Math.round(angleDeg + 90);
       
       $('angleSlider').value = currentAngle;
@@ -119,6 +125,7 @@ if (draggableText && editorContainer) {
   });
 }
 
+// बटन (Handles) बनाना
 function setupHandles() {
   if (document.querySelector('.handle')) return;
 
@@ -128,6 +135,7 @@ function setupHandles() {
   const rotateHandle = document.createElement('div');
   rotateHandle.className = 'handle rotate';
 
+  // Resize (छोटा-बड़ा) बटन का लॉजिक
   resizeHandle.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
     const rect = editorContainer.getBoundingClientRect();
@@ -140,6 +148,7 @@ function setupHandles() {
     e.preventDefault();
   });
 
+  // Rotate (घुमाने) बटन का लॉजिक
   rotateHandle.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
     isRotating = true;
@@ -204,7 +213,7 @@ function applyCMYK() {
   updateEditorText();
 }
 
-// 🔥 WordArt जैसा कर्व और टेक्स्ट अपडेट करने का लॉजिक
+// 🔥 टेक्स्ट और कर्व अपडेट करने का सही लॉजिक
 function updateEditorText() {
   if (!draggableText) return;
   const name = $('nameInput').value || 'RAHUL';
@@ -218,29 +227,37 @@ function updateEditorText() {
   const pxY = h / 2;
   const fontSize = currentFontSize * 4;
 
-  let transformStr = `rotate(${currentAngle}deg)`;
-  let svgContent = '';
+  // एंगल को पूरे बॉक्स (draggableText) पर लगाएँ ताकि सेलेक्शन बॉक्स भी घूमे
+  draggableText.style.transform = `translate(-50%, -50%) rotate(${currentAngle}deg)`;
+
+  let pathD = "";
+  const startX = 30;
+  const endX = w - 30;
+  const centerX = w / 2;
+  
+  const curveVal = parseFloat(currentCurve);
+  
+  if (style === 'full_circle') {
+    // 🔥 पूरा गोल (0 आकार) बनाने का लॉजिक
+    const r = 50; 
+    pathD = `M ${centerX} ${pxY - r} A ${r} ${r} 0 1 1 ${centerX} ${pxY + r} A ${r} ${r} 0 1 1 ${centerX} ${pxY - r}`;
+  } 
+  else if (style === 'round' || (curveVal !== 0 && !isNaN(curveVal))) {
+    let cVal = (style === 'round') ? 50 : curveVal;
+    let controlY = pxY - (cVal * 1.5); 
+    pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
+  } else {
+    pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
+  }
+
+  let svgContent = "";
 
   if (style === 'vertical') {
-    svgContent = `<text x="${w/2}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2" transform="rotate(90 ${w/2} ${pxY})">${name}</text>`;
+    svgContent = `<text x="${w/2}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2">${name}</text>`;
   } else {
-    let pathD = "";
-    
-    const startX = 30;
-    const endX = w - 30;
-    const centerX = w / 2;
-    
-    if (style === 'round' || currentCurve != 0) {
-      let cVal = (style === 'round') ? 50 : currentCurve; 
-      let controlY = pxY - (cVal * 1.5); 
-      pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
-    } else {
-      pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
-    }
-
     svgContent = `
       <path id="livePath" d="${pathD}" fill="transparent" />
-      <text font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2">
+      <text font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2" pointer-events="none">
         <textPath href="#livePath" startOffset="50%" text-anchor="middle">${name}</textPath>
       </text>
     `;
@@ -248,11 +265,12 @@ function updateEditorText() {
 
   const svgWrapper = document.createElement('div');
   svgWrapper.innerHTML = `
-    <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="transform: ${transformStr}; pointer-events: none;">
+    <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="pointer-events: none;">
       ${svgContent}
     </svg>
   `;
   
+  // पुराने SVG को हटाकर नया लगाएँ (बटन्स को बचाकर)
   const oldSvg = draggableText.querySelector('svg');
   if (oldSvg) oldSvg.remove();
   draggableText.insertBefore(svgWrapper.firstElementChild, draggableText.firstChild);
