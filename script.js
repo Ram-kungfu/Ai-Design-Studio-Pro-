@@ -407,16 +407,22 @@ function setStatus(msg, type = '') {
   bar.innerHTML = (type === '' ? '<span class="spinner"></span>' : '') + msg;
 }
 
-// 🔥 नया थंब कार्ड बनाने वाला फंक्शन (सारे बटन एक साथ)
+// 🔥 अपडेटेड थंब कार्ड (अब हर जगह दोनों डाउनलोड बटन 100% दिखेंगे)
 function createThumbCard(wmUrl, rawUrl, pdfUrl, label, isVector = false) {
   const div = document.createElement('div');
   div.className = 'thumb';
   
+  // अगर सर्वर से rawUrl (बिना वॉटरमार्क) नहीं आया है, तो बैकअप के तौर पर wmUrl (वॉटरमार्क वाली) ही डाउनलोड होगी
+  const downloadRawUrl = rawUrl || wmUrl;
+  
   let buttonsHtml = `
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px;">
       <a href="${wmUrl}" download class="btn small" style="text-align: center; font-size: 11px; padding: 6px; background: #475569;">⬇️ Watermark</a>
-      ${rawUrl ? `<a href="${rawUrl}" download class="btn small primary" style="text-align: center; font-size: 11px; padding: 6px; background: #fbbf24; color: #000;">⬇️ बिना WM</a>` : ''}
-      <button onclick="shareImage('${rawUrl || wmUrl}')" class="btn small" style="text-align: center; font-size: 11px; padding: 6px; background: #3b82f6;">📤 शेयर</button>
+      
+      <a href="${downloadRawUrl}" download class="btn small primary" style="text-align: center; font-size: 11px; padding: 6px; background: #fbbf24; color: #000;">⬇️ बिना WM</a>
+      
+      <button onclick="shareImage('${downloadRawUrl}')" class="btn small" style="text-align: center; font-size: 11px; padding: 6px; background: #3b82f6;">📤 शेयर</button>
+      
       ${isVector && pdfUrl ? `<a href="${pdfUrl}" download class="btn small primary" style="text-align: center; font-size: 11px; padding: 6px; background: #10b981; color: #fff;">⬇️ PDF</a>` : ''}
     </div>
   `;
@@ -429,9 +435,9 @@ function createThumbCard(wmUrl, rawUrl, pdfUrl, label, isVector = false) {
   return div;
 }
 
-// 🔥 पुराने showThumb को अपडेट कर दिया गया है ताकि यह नए कार्ड फंक्शन का इस्तेमाल करे
+// 🔥 showThumb को भी अपडेट कर दिया गया है
 function showThumb(url, label) {
-  const div = createThumbCard(url, null, null, label, false);
+  const div = createThumbCard(url, url, null, label, false);
   $('resultGrid').appendChild(div);
 }
 
