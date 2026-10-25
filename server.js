@@ -401,7 +401,8 @@ app.post('/api/background', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 7. AUTO VARIATIONS (4 डिज़ाइन - डिले और रिट्राई के साथ)
+
+// 7. AUTO VARIATIONS (5 डिज़ाइन - डिले और रिट्राई के साथ)
 app.post('/api/variations', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
@@ -410,14 +411,15 @@ app.post('/api/variations', upload.single('image'), async (req, res) => {
       "luxury royal gold background, professional poster design",
       "modern minimalist gradient background, clean design",
       "vintage floral pattern background, traditional design",
-      "cyberpunk neon dark background, futuristic design"
+      "cyberpunk neon dark background, futuristic design",
+      "elegant marble texture background, luxury design" // 🔥 5वां स्टाइल जोड़ दिया गया है
     ];
     const variations = [];
 
     for (let i = 0; i < styles.length; i++) {
       try {
         let bg = null;
-        let retries = 3; // 🔥 3 बार ट्राई करेगा
+        let retries = 5; // 🔥 5 बार ट्राई करेगा
 
         // 🔥 जब तक इमेज नहीं आती, तब तक ट्राई करता रहेगा
         while (retries > 0 && !bg) {
@@ -432,8 +434,8 @@ app.post('/api/variations', upload.single('image'), async (req, res) => {
             bg = null;
             retries--;
             console.log(`Retry डिज़ाइन ${i+1} के लिए... बाकी ${retries}`);
-            // 🔥 3 सेकंड का इंतज़ार करें ताकि सर्वर ब्लॉक न हो
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            // 🔥 5 सेकंड का इंतज़ार करें ताकि सर्वर ब्लॉक न हो
+            await new Promise(resolve => setTimeout(resolve, 5000));
           }
         }
 
@@ -451,7 +453,6 @@ app.post('/api/variations', upload.single('image'), async (req, res) => {
     res.json({ success: true, variations });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
 // 8. 3D TEXT ONLY ROUTE
 app.post('/api/3d-text', upload.single('image'), async (req, res) => {
   try {
