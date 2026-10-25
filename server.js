@@ -132,7 +132,6 @@ async function generateStylishText(text, style = '3D golden') {
     throw new Error("AI ने कोई टेक्स्ट इमेज नहीं दी");
   } catch (e) {
     console.error("Stylish Text Error:", e.message);
-    // Fallback: अगर AI फेल हो जाए तो सिंपल टेक्स्ट लौटा दें
     return null;
   }
 }
@@ -140,7 +139,6 @@ async function generateStylishText(text, style = '3D golden') {
 // 6. Compose (Background + Cutout + Name/3D Text + Custom Size)
 async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null) {
   let W, H;
-  // कस्टम साइज़ चेक
   if (customW && customH) {
     W = parseInt(customW);
     H = parseInt(customH);
@@ -161,16 +159,14 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
   const y = Math.floor((H - targetH) / 2 + H * 0.05);
   let composed = await sharp(bgCanvas).composite([{ input: cutResized, left: x, top: y }]).png().toBuffer();
 
-  // अगर AI से बना 3D टेक्स्ट है
   if (textImageBuf) {
     const textResized = await sharp(textImageBuf).resize({ width: Math.floor(W * 0.7) }).png().toBuffer();
     const textMeta = await sharp(textResized).metadata();
     const tx = Math.floor((W - textMeta.width) / 2);
-    const ty = Math.floor(H * 0.15); // ऊपर की तरफ
+    const ty = Math.floor(H * 0.15);
     
     composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
   } 
-  // अगर सिंपल टेक्स्ट है (पुराना तरीका)
   else if (name) {
     const fs2 = Math.floor(H * 0.09);
     const svgText = `<svg width="${W}" height="${fs2 + 80}" xmlns="http://www.w3.org/2000/svg">
@@ -232,7 +228,7 @@ function saveOut(buf, prefix, ext = 'png') {
 
 // ================= API ROUTES =================
 
-// 1. FULL AUTO (अब 3D टेक्स्ट और कस्टम साइज़ के साथ)
+// 1. FULL AUTO
 app.post('/api/auto', upload.single('image'), async (req, res) => {
   try {
     const { prompt = '', name = '', aspect = '2:3', customW, customH, use3d = 'false' } = req.body;
@@ -251,7 +247,6 @@ app.post('/api/auto', upload.single('image'), async (req, res) => {
     try { bg = await callRecraftStabilityAPI(prompt, aspect); } catch (e) {}
     if (bg) steps.bgPreview = saveOut(bg, 'bg');
 
-    // 3D टेक्स्ट चेक
     let textImg = null;
     if (name && use3d === 'true') {
       textImg = await generateStylishText(name);
@@ -368,7 +363,7 @@ app.post('/api/variations', upload.single('image'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 🔥 8. NEW: 3D TEXT ONLY ROUTE
+// 8. 3D TEXT ONLY ROUTE
 app.post('/api/3d-text', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
@@ -392,7 +387,55 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
   }
 });
 
-// ✅ Serve HTML
+// 9. 🔥 NEW: MANUAL TEXT PLACEMENT (ड्रैग एंड ड्रॉप वाला)
+app.post('/api/manual-text', upload.single('image'), async (req, res) => {
+  try {
+    const buf = fs.readFileSync(req.file.path);
+    const { name = '', textX = 50, textY = 20, textStyle = 'normal', textColor = '#ffffff' } = req.body;
+    
+    if (!name) throw new Error("कृपया नाम लिखें");
+
+    const imgMeta = await sharp(buf).metadata();
+    const W = imgMeta.width;
+    const H = imgMeta.height;
+
+    const pxX = Math.floor((parseFloat(textX) / 100) * W);
+    const pxY = Math.floor((parseFloat(textY) / 100) * H);
+    const fs2 = Math.floor(H * 0.09);
+
+    let svgText = "";
+    if (textStyle === 'rotate') {
+      svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+        <text x="${pxX}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="4" transform="rotate(-15 ${pxX} ${pxY})">${name}</text>
+      </svg>`;
+    } else if (textStyle === 'round') {
+      const pathRadius = W * 0.4;
+      svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+        <path id="curve" d="M ${pxX - pathRadius} ${pxY} A ${pathRadius} ${pathRadius} 0 0 1 ${pxX + pathRadius} ${pxY}" fill="transparent" />
+        <text font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="4" font-family="sans-serif" font-weight="bold">
+          <textPath href="#curve" startOffset="50%" text-anchor="middle">${name}</textPath>
+        </text>
+      </svg>`;
+    } else {
+      svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+        <text x="${pxX}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="4">${name}</text>
+      </svg>`;
+    }
+
+    const finalImg = await sharp(buf).composite([{ input: Buffer.from(svgText), top: 0, left: 0 }]).png().toBuffer();
+    
+    const preview = saveOut(await addWatermark(finalImg), 'manual_text_wm');
+    const finalRaw = saveOut(finalImg, 'manual_text_raw');
+
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, preview, finalRaw });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ✅ Serve HTML (यह हमेशा सबसे आखिर में होना चाहिए)
 app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
+// ✅ सर्वर शुरू करें (यह सबसे आखिरी लाइन होनी चाहिए)
 app.listen(PORT, () => { console.log(`🚀 AI Studio → http://localhost:${PORT}`); });
