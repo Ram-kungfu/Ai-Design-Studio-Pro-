@@ -182,9 +182,14 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
   }
   // सिंपल टेक्स्ट
   else if (name) {
-    const fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100));
+    let fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100));
     const pxX = W / 2;
     const pxY = H * 0.25;   
+
+    // 🔥 Auto-Fit (साइज़ छोटा करना ताकि बाहर न जाए)
+    const maxWidth = W * 0.9;
+    let estWidth = name.length * fs2 * 0.6;
+    if (estWidth > maxWidth) fs2 = Math.floor(fs2 * (maxWidth / estWidth));
 
     let pathD = "";
     const curve = parseFloat(curveVal);
@@ -439,7 +444,7 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
   }
 });
 
-// 9. MANUAL TEXT PLACEMENT (फॉन्ट और स्टाइल के साथ)
+// 9. MANUAL TEXT PLACEMENT (फॉन्ट और स्टाइल के साथ - 100% ऑटो-फिट)
 app.post('/api/manual-text', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
@@ -453,7 +458,15 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
 
     const pxX = Math.floor((parseFloat(textX) / 100) * W);
     const pxY = Math.floor((parseFloat(textY) / 100) * H);
-    const fs2 = Math.floor(H * (parseFloat(fontSize) / 100));
+    
+    let fs2 = Math.floor(H * (parseFloat(fontSize) / 100));
+
+    // 🔥 Auto-Fit (साइज़ छोटा करना ताकि बॉक्स से बाहर न जाए)
+    const maxWidth = W * 0.9;
+    let estWidth = name.length * fs2 * 0.6;
+    if (estWidth > maxWidth) {
+      fs2 = Math.floor(fs2 * (maxWidth / estWidth));
+    }
 
     let finalTransform = `rotate(${angle} ${pxX} ${pxY})`;
     let svgText = "";
