@@ -12,21 +12,23 @@
     width: 100%;
     max-width: 400px;
     margin: 10px auto;
-    background: #1e293b;
+    background: #0f172a;
     border: 2px dashed #fbbf24;
     border-radius: 10px;
     overflow: hidden;
     touch-action: none;
+    min-height: 150px; /* अगर इमेज न हो तो भी बॉक्स दिखे */
   }
   .editor-container img {
     width: 100%;
     display: block;
     user-select: none;
     pointer-events: none;
+    min-height: 150px;
   }
   .draggable-text {
     position: absolute;
-    top: 20%;
+    top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
     cursor: grab;
@@ -72,11 +74,12 @@
       </div>
     </div>
 
-    <!-- टेक्स्ट स्टाइल -->
+    <!-- 🔥 टेक्स्ट स्टाइल (Horizontal जोड़ा गया) -->
     <div style="margin-bottom: 12px;">
       <label>टेक्स्ट स्टाइल:</label>
       <select id="textStyleSelect" onchange="updateEditorText()">
         <option value="normal">सीधा (Normal)</option>
+        <option value="horizontal">होरिजेंटल (Horizontal)</option>
         <option value="rotate">तिरछा (Rotate)</option>
         <option value="round">गोल (Round)</option>
         <option value="vertical">खड़ा (Vertical)</option>
@@ -117,12 +120,12 @@
     <label style="margin-top: 12px;">AI बैकग्राउंड प्रॉम्प्ट:</label>
     <textarea id="promptInput" rows="2" placeholder="gold luxury background"></textarea>
 
-    <!-- 🔥 NEW: Live Editor Area -->
+    <!-- 🔥 NEW: Live Editor Area (इमेज छिपी रहेगी जब तक अपलोड न हो) -->
     <h2 style="margin-top: 20px;">✋ टेक्स्ट को खींचकर सेट करें (Drag & Drop)</h2>
     <p class="hint">टेक्स्ट लिखने के बाद उसे उंगली से पकड़कर डिज़ाइन पर कहीं भी ले जाएँ।</p>
     
     <div class="editor-container" id="editorContainer">
-      <img id="editorBg" src="" alt="bg" />
+      <img id="editorBg" src="" alt="" style="display: none;" /> 
       <div class="draggable-text" id="draggableText">RAHUL</div>
     </div>
     <button class="btn small" onclick="applyManualText()">✅ इस जगह टेक्स्ट फिट करें</button>
