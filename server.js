@@ -180,9 +180,10 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     let pathD = "";
     const curve = parseFloat(curveVal);
     
-    // 🔥 WordArt Curve & Full Circle Logic (Server Side)
+    // 🔥 WordArt Curve & Full Circle Logic (Dynamic Radius)
     if (textStyle === 'full_circle') {
-        const r = 60;
+        let r = (name.length * fs2 * 0.6) / (2 * Math.PI);
+        if (r < 40) r = 40;
         pathD = `M ${pxX} ${pxY - r} A ${r} ${r} 0 1 1 ${pxX} ${pxY + r} A ${r} ${r} 0 1 1 ${pxX} ${pxY - r}`;
     } else if (curve === 0) {
       pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
@@ -447,9 +448,10 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
       
       const curveFloat = parseFloat(curve);
       
-      // 🔥 WordArt Curve & Full Circle Logic
+      // 🔥 WordArt Curve & Full Circle Logic (Dynamic Radius)
       if (textStyle === 'full_circle') {
-        const r = 60;
+        let r = (name.length * fs2 * 0.6) / (2 * Math.PI);
+        if (r < 40) r = 40;
         pathD = `M ${pxX} ${pxY - r} A ${r} ${r} 0 1 1 ${pxX} ${pxY + r} A ${r} ${r} 0 1 1 ${pxX} ${pxY - r}`;
       } else if (textStyle === 'round') {
         const controlY = pxY - (50 * 3); 
