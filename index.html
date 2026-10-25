@@ -122,6 +122,21 @@
       </select>
     </div>
 
+    <!-- 🔥 नया: फॉन्ट चुनने का ऑप्शन (सही जगह पर जोड़ा गया है) -->
+    <div style="margin-bottom: 12px;">
+      <label>फॉन्ट चुनें (Font Family):</label>
+      <select id="fontFamilySelect" onchange="updateEditorText()" style="width: 100%; padding: 10px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 8px;">
+        <option value="Arial, sans-serif">Arial (साफ और नॉर्मल)</option>
+        <option value="'Impact', sans-serif">Impact (मोटा और बोल्ड)</option>
+        <option value="'Times New Roman', serif">Times New Roman (प्रीमियम)</option>
+        <option value="'Courier New', monospace">Courier (मशीन जैसा)</option>
+        <option value="'Georgia', serif">Georgia (सुंदर)</option>
+        <option value="'Trebuchet MS', sans-serif">Trebuchet (मॉडर्न)</option>
+        <option value="'Comic Sans MS', cursive">Comic (मजेदार)</option>
+        <option value="'Verdana', sans-serif">Verdana (चौड़ा)</option>
+      </select>
+    </div>
+
     <div style="margin-bottom: 12px; background: #0f172a; padding: 10px; border-radius: 8px;">
       <label>वक्रता (Curve): <span id="curveVal" style="color:#fbbf24;">0</span></label>
       <input type="range" id="curveSlider" min="-100" max="100" value="0" oninput="updateCurveValue()" style="width: 100%;">
@@ -269,4 +284,5 @@
 <footer><p>© AI Design Studio Pro</p></footer>
 <script src="script.js"></script>
 </body>
-            </html>
+  </html>
+  
