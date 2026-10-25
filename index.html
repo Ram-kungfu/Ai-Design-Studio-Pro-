@@ -61,31 +61,40 @@
   <section class="card">
     <h2>2️⃣ सेटिंग्स</h2>
     
+    <!-- नाम / टेक्स्ट और 3D चेकबॉक्स -->
     <div style="margin-bottom: 12px;">
       <label>नाम / टेक्स्ट:</label>
       <input type="text" id="nameInput" placeholder="e.g. RAHUL" oninput="updateEditorText()" />
       
-      <div style="margin-top: 8px;">
-        <label>टेक्स्ट स्टाइल (Text Style):</label>
-        <select id="textStyleSelect" onchange="updateEditorText()">
-          <option value="normal">सीधा (Normal)</option>
-          <option value="rotate">तिरछा (Rotate)</option>
-          <option value="round">गोल (Round)</option>
-          <option value="vertical">खड़ा (Vertical)</option>
-        </select>
-      </div>
-
-      <div style="margin-top: 8px;">
-        <label>टेक्स्ट का रंग:</label>
-        <select id="textColorSelect" onchange="updateEditorText()">
-          <option value="#ffffff">White</option>
-          <option value="#fbbf24">Golden</option>
-          <option value="#ff0000">Red</option>
-          <option value="#000000">Black</option>
-        </select>
+      <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="use3dText" style="width: auto; transform: scale(1.2);">
+        <label for="use3dText" style="margin: 0; cursor: pointer; color: #fbbf24;">✨ नाम को 3D स्टाइल में बनाएँ (AI)</label>
       </div>
     </div>
 
+    <!-- टेक्स्ट स्टाइल -->
+    <div style="margin-bottom: 12px;">
+      <label>टेक्स्ट स्टाइल:</label>
+      <select id="textStyleSelect" onchange="updateEditorText()">
+        <option value="normal">सीधा (Normal)</option>
+        <option value="rotate">तिरछा (Rotate)</option>
+        <option value="round">गोल (Round)</option>
+        <option value="vertical">खड़ा (Vertical)</option>
+      </select>
+    </div>
+
+    <!-- टेक्स्ट का रंग -->
+    <div style="margin-bottom: 12px;">
+      <label>टेक्स्ट का रंग:</label>
+      <select id="textColorSelect" onchange="updateEditorText()">
+        <option value="#ffffff">White</option>
+        <option value="#fbbf24">Golden</option>
+        <option value="#ff0000">Red</option>
+        <option value="#000000">Black</option>
+      </select>
+    </div>
+
+    <!-- साइज़ और कस्टम साइज़ -->
     <div>
       <label>साइज़:</label>
       <select id="aspectSelect">
@@ -94,14 +103,17 @@
         <option value="3:2">Poster (3:2)</option>
         <option value="custom">Custom Size (कस्टम साइज़)</option>
       </select>
+      
+      <!-- कस्टम साइज़ के लिए बॉक्स -->
       <div id="customSizeBox" style="display: none; margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 8px; border: 1px dashed #475569;">
-        <label>चौड़ाई (Width):</label>
+        <label>चौड़ाई (Width in pixels):</label>
         <input type="number" id="customW" placeholder="e.g. 2000" style="margin-bottom: 8px;">
-        <label>ऊँचाई (Height):</label>
+        <label>ऊँचाई (Height in pixels):</label>
         <input type="number" id="customH" placeholder="e.g. 3000">
       </div>
     </div>
 
+    <!-- AI प्रॉम्प्ट -->
     <label style="margin-top: 12px;">AI बैकग्राउंड प्रॉम्प्ट:</label>
     <textarea id="promptInput" rows="2" placeholder="gold luxury background"></textarea>
 
@@ -174,4 +186,4 @@
 <footer><p>© AI Design Studio Pro</p></footer>
 <script src="script.js"></script>
 </body>
-          </html>
+</html>
