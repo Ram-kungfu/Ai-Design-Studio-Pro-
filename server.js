@@ -83,45 +83,69 @@ async function callVectorizerAPI(buffer) {
   } catch (e) { throw new Error("Vectorizer API failed."); }
 }
 
-// 4. AI Background Generator (Gemini / Pollinations)
+// 4. AI Background Generator (Pollinations First - 100% Working Fallback)
 async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
   const BG_SUFFIX = '. Background design only, vibrant, professional, no people, no text.';
+  // अगर प्रॉम्प्ट खाली हो, तो डिफ़ॉल्ट इस्तेमाल करें
+  const finalPrompt = (prompt && prompt.trim() !== '') ? prompt : 'luxury royal gold background, professional poster design';
+  
+  // 🔥 1. पहले Pollinations.ai से कोशिश करें (क्योंकि यह फ्री है और कभी फेल नहीं होता)
   try {
-    const payload = {
-      contents: [{ parts: [{ text: prompt + BG_SUFFIX }] }],
-      generationConfig: { 
-        responseModalities: ['TEXT', 'IMAGE'],
-        // 🔥 सही फॉर्मेट (response_format के अंदर image और aspect_ratio)
-        response_format: { 
-          image: { aspect_ratio: aspect } 
-        }
-      }
-    };
+    console.log("⏳ Pollinations.ai से बैकग्राउंड माँग रहे हैं...");
+    const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(finalPrompt + BG_SUFFIX) + '?width=1024&height=1536&nologo=true&seed=' + Math.floor(Math.random() * 100000);
     
-    // 🔥 v1beta सही है, लेकिन सुनिश्चित करें कि GEM_URL में v1beta हो
-    const r = await axios.post(`${GEM_URL}gemini-3.1-flash-image:generateContent`, payload, {
-      headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' }, timeout: 180000
-    });
+    // टाइमआउट बढ़ाकर 180000 (3 मिनट) कर दिया है ताकि स्लो सर्वर भी काम करे
+    const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 180000 });
     
-    for (const cand of r.data.candidates || []) {
-      for (const part of cand.content?.parts || []) {
-        const inl = part.inlineData || part.inline_data;
-        if (inl?.data) {
-          console.log("✅ Gemini से इमेज मिल गई!");
-          return Buffer.from(inl.data, 'base64');
-        }
-      }
+    if (r.data && r.data.byteLength > 1000) {
+      console.log("✅ Pollinations.ai से बैकग्राउंड मिल गया!");
+      return Buffer.from(r.data);
     }
-    throw new Error("Gemini ने इमेज नहीं दी");
-  } catch (e) {
-    console.error("❌ Gemini फेल हो गया, Pollinations पर जा रहे हैं। एरर:", e.message);
-    // फॉलबैक (Pollinations)
-    const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt + BG_SUFFIX) + '?width=1024&height=1536&nologo=true&seed=' + Math.floor(Math.random() * 100000);
-    const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
-    return Buffer.from(r.data);
+    throw new Error("Pollinations returned empty image");
+  } catch (pollError) {
+    console.error("❌ Pollinations फेल हो गया:", pollError.message);
+    
+    // 🔥 2. अगर Pollinations फेल हो, तो Gemini से कोशिश करें
+    try {
+      console.log("⏳ अब Gemini से बैकग्राउंड माँग रहे हैं...");
+      const payload = {
+        contents: [{ parts: [{ text: finalPrompt + BG_SUFFIX }] }],
+        generationConfig: { 
+          responseModalities: ['TEXT', 'IMAGE'],
+          response_format: { image: { aspect_ratio: aspect } } 
+        }
+      };
+      
+      const r = await axios.post(`${GEM_URL}gemini-3.1-flash-image:generateContent`, payload, {
+        headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' }, timeout: 180000
+      });
+      
+      for (const cand of r.data.candidates || []) {
+        for (const part of cand.content?.parts || []) {
+          const inl = part.inlineData || part.inline_data;
+          if (inl?.data) {
+            console.log("✅ Gemini से बैकग्राउंड मिल गया!");
+            return Buffer.from(inl.data, 'base64');
+          }
+        }
+      }
+      throw new Error("Gemini ने इमेज नहीं दी");
+    } catch (geminiError) {
+      // 🔥 3. अगर दोनों फेल हो जाएँ, तो एक सुंदर गोल्डन ग्रेडिएंट बैकग्राउंड बना दें (ताकि सफेद न दिखे)
+      console.error("❌ Gemini भी फेल हो गया। डिफ़ॉल्ट ग्रेडिएंट बना रहे हैं।");
+      const svgGradient = `<svg width="1024" height="1536" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
+            <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
+          </linearGradient>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grad)" />
+      </svg>`;
+      return await sharp(Buffer.from(svgGradient)).png().toBuffer();
+    }
   }
 }
-
 // 5. 3D स्टाइलिश टेक्स्ट बनाना
 async function generateStylishText(text, style = '3D golden') {
   try {
