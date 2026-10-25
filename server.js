@@ -82,7 +82,7 @@ async function callVectorizerAPI(buffer) {
   } catch (e) { throw new Error("Vectorizer API failed."); }
 }
 
-// 4. AI Background Generator (Recraft / Gemini / Pollinations) — 🔥 SMART: हर बार नई इमेज
+// 4. AI Background Generator (Recraft / Gemini / Pollinations)
 async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
   const BG_SUFFIX = '. Background design only, vibrant, professional, no people, no text.';
   try {
@@ -401,7 +401,7 @@ app.post('/api/background', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 7. AUTO VARIATIONS (4 डिज़ाइन) — 🔥 SMART: हर बार 4 अलग-अलग डिज़ाइन
+// 7. AUTO VARIATIONS (4 डिज़ाइन)
 app.post('/api/variations', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
