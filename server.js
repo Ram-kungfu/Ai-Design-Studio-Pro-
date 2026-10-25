@@ -551,6 +551,41 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
   }
 });
 
+
+// 🔥 2B. DIRECT CUT + VECTOR (बिना Python SAM के - फ्री तरीका)
+app.post('/api/direct-vector', upload.single('image'), async (req, res) => {
+  try {
+    const buf = fs.readFileSync(req.file.path);
+    const results = [];
+
+    // 1. Remove.bg से 100% सटीक कटिंग
+    let cutImage;
+    try {
+      cutImage = await callRemoveBgAPI(buf, false);
+    } catch (e) {
+      throw new Error("बैकग्राउंड हटाने में समस्या आई (API लिमिट खत्म हो सकती है)");
+    }
+
+    const wmPng = await addWatermark(cutImage);
+    const previewPng = saveOut(wmPng, `layer_cut`);
+
+    // 2. उसी कटी हुई इमेज को Vectorizer से PDF बनाएँ
+    let vectorPdf = null;
+    try {
+      const vectorBuf = await callVectorizerAPI(cutImage);
+      vectorPdf = saveOut(vectorBuf, `vector_layer`, 'pdf');
+    } catch (e) {
+      console.log("Vectorizer फेल हुआ:", e.message);
+    }
+
+    results.push({ layerNumber: 1, previewPng, vectorPdf });
+
+    fs.unlinkSync(req.file.path);
+    res.json({ success: true, total: results.length, results });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
 // ✅ Serve HTML (यह हमेशा सबसे आखिर में होना चाहिए)
 app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
