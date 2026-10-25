@@ -89,7 +89,11 @@ async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
   try {
     const payload = {
       contents: [{ parts: [{ text: prompt + BG_SUFFIX }] }],
-      generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: aspect } }
+      // 🔥 यही सही फॉर्मेट है (v1beta के साथ imageConfig)
+      generationConfig: { 
+        responseModalities: ['TEXT', 'IMAGE'], 
+        imageConfig: { aspectRatio: aspect } 
+      }
     };
     const r = await axios.post(`${GEM_URL}gemini-3.1-flash-image:generateContent`, payload, {
       headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' }, timeout: 180000
@@ -102,6 +106,7 @@ async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
     }
     throw new Error("No image returned");
   } catch (e) {
+    // अगर Gemini फेल हो जाए, तो Pollinations.ai से बैकअप इमेज ले लें
     const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt + BG_SUFFIX) + '?width=1024&height=1536&nologo=true&seed=' + Math.floor(Math.random() * 100000);
     const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
     return Buffer.from(r.data);
