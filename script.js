@@ -12,8 +12,8 @@ async function runDirectVector() {
     
     const grid = $('layerResults');
     data.results.forEach(res => {
-      // 🔥 यहाँ नए थंब कार्ड फंक्शन का इस्तेमाल किया गया है ताकि सारे बटन आ जाएँ
-      const div = createThumbCard(res.previewPng, res.previewPng, res.vectorPdf, 'कट + वेक्टर', true);
+      // 🔥 यहाँ res.rawPng पास किया गया है ताकि बिना वॉटरमार्क वाला बटन काम करे
+      const div = createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, 'कट + वेक्टर', true);
       grid.appendChild(div);
     });
     setStatus('✅ कट + वेक्टर तैयार!', 'ok');
@@ -565,10 +565,12 @@ async function runVariations() {
     
     if (data.error) throw new Error(data.error);
     
-    // 🔥 यहाँ हम चेक करेंगे कि सर्वर से कितने डिज़ाइन आए हैं
+    // 🔥 यहाँ हमने कोड बदला है ताकि wmUrl और rawUrl दोनों सही से पास हो जाएँ
     if (data.variations && data.variations.length > 0) {
-      data.variations.forEach((url, i) => {
-        showThumb(url, `✨ डिज़ाइन ${i + 1}`);
+      data.variations.forEach((item, i) => {
+        // अब सर्वर से item.wmUrl (वॉटरमार्क वाली) और item.rawUrl (बिना वॉटरमार्क वाली) आ रहा है
+        const div = createThumbCard(item.wmUrl, item.rawUrl, null, `✨ डिज़ाइन ${i + 1}`, false);
+        $('resultGrid').appendChild(div);
       });
       setStatus(`✅ ${data.variations.length} डिज़ाइन तैयार!`, 'ok');
     } else {
@@ -614,7 +616,11 @@ async function runCutout() {
     const r = await fetch('/api/cutout', { method: 'POST', body: fd });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    showThumb(d.preview, '✂️ कटिंग');
+    
+    // 🔥 यहाँ d.finalRaw पास किया गया है ताकि बिना वॉटरमार्क वाला बटन काम करे
+    const div = createThumbCard(d.preview, d.finalRaw, null, '✂️ कटिंग', false);
+    $('resultGrid').appendChild(div);
+    
     setStatus('✅ हो गया', 'ok');
   } catch (e) {
     setStatus('❌ ' + e.message, 'err');
@@ -634,7 +640,11 @@ async function runUpscale() {
     const r = await fetch('/api/upscale', { method: 'POST', body: fd });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
-    showThumb(d.preview, '🔼 HD');
+    
+    // 🔥 यहाँ d.finalRaw पास किया गया है ताकि बिना वॉटरमार्क वाला बटन काम करे
+    const div = createThumbCard(d.preview, d.finalRaw, null, '🔼 HD', false);
+    $('resultGrid').appendChild(div);
+    
     setStatus('✅ हो गया', 'ok');
   } catch (e) {
     setStatus('❌ ' + e.message, 'err');
