@@ -396,3 +396,12 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
 app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'index.html')); });
 
 app.listen(PORT, () => { console.log(`🚀 AI Studio → http://localhost:${PORT}`); });
+// कस्टम साइज़ वाला बॉक्स दिखाना/छिपाना
+document.getElementById('aspectSelect').addEventListener('change', function() {
+  const box = document.getElementById('customSizeBox');
+  if (this.value === 'custom') {
+    box.style.display = 'block';
+  } else {
+    box.style.display = 'none';
+  }
+});
