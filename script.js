@@ -216,33 +216,37 @@ function applyCMYK() {
 // ============================================================
 // 🔥 HELPER: DYNAMIC FULL CIRCLE (छोटा/बड़ा अपने आप fit)
 // ============================================================
-// text.length × fontSize × 0.6  =  approx text width
-// Circumference = 2πr  =>  r = textWidth / (2π)
-// यही गोला छोटे शब्द पर छोटा, बड़े शब्द पर बड़ा बनेगा।
 function calcCircleRadius(text, fontSizePx) {
   const approxTextWidth = text.length * fontSizePx * 0.6;
   let r = approxTextWidth / (2 * Math.PI);
-  // safety only — 1-2 अक्षर पर path degenerate न हो
-  if (r < 10) r = 10;
+  if (r < 10) r = 10; 
   return r;
 }
 
-// 🔥 टेक्स्ट और कर्व अपडेट करने का सही लॉजिक (Dynamic Full Circle)
+// 🔥 टेक्स्ट और स्टाइल अपडेट करने का सही लॉजिक (सभी स्टाइल्स के साथ)
 function updateEditorText() {
   if (!draggableText) return;
+  
   const name = $('nameInput').value || 'RAHUL';
   const style = $('textStyleSelect').value;
   const color = $('textColorPicker').value;
   const fontWeight = isBold ? 'bold' : 'normal';
   const fontStyle = isItalic ? 'italic' : 'normal';
+  
+  // 🔥 फॉन्ट फैमिली लें (अगर ड्रॉपडाउन नहीं है तो Arial ले लो)
+  const fontFamily = $('fontFamilySelect') ? $('fontFamilySelect').value : 'Arial, sans-serif';
 
   const w = 400;
   const h = 150;
   const pxY = h / 2;
   const fontSize = currentFontSize * 4;
 
-  // एंगल को पूरे बॉक्स (draggableText) पर लगाएँ ताकि सेलेक्शन बॉक्स भी घूमे
-  draggableText.style.transform = `translate(-50%, -50%) rotate(${currentAngle}deg)`;
+  // बॉक्स का रोटेशन (अगर 'तिरछा' चुना है तो 45 डिग्री तिरछा करें)
+  let boxRotation = currentAngle;
+  if (style === 'rotate') {
+    boxRotation = currentAngle + 45; 
+  }
+  draggableText.style.transform = `translate(-50%, -50%) rotate(${boxRotation}deg)`;
 
   let pathD = "";
   const startX = 30;
@@ -250,27 +254,40 @@ function updateEditorText() {
   const centerX = w / 2;
   const curveVal = parseFloat(currentCurve);
 
-  if (style === 'full_circle') {
-    // 🔥 DYNAMIC गोला: टेक्स्ट जितना लंबा, गोला उतना बड़ा
-    const r = calcCircleRadius(name, fontSize);
-    pathD = `M ${centerX} ${pxY - r} a ${r},${r} 0 1,1 0,${r * 2} a ${r},${r} 0 1,1 0,${-r * 2}`;
-  }
-  else if (style === 'round' || (curveVal !== 0 && !isNaN(curveVal))) {
-    let cVal = (style === 'round') ? 50 : curveVal;
-    let controlY = pxY - (cVal * 1.5);
-    pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
-  } else {
-    pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
-  }
-
   let svgContent = "";
 
+  // 🔥 1. Vertical (खड़ा) का लॉजिक
   if (style === 'vertical') {
-    svgContent = `<text x="${w / 2}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2">${name}</text>`;
-  } else {
+    svgContent = `
+      <text x="${centerX}" y="${pxY}" text-anchor="middle" dominant-baseline="middle" 
+            font-family="${fontFamily}" font-size="${fontSize}" 
+            font-weight="${fontWeight}" font-style="${fontStyle}" 
+            fill="${color}" transform="rotate(90 ${centerX} ${pxY})">
+        ${name}
+      </text>`;
+  } 
+  // 🔥 बाकी सभी स्टाइल्स (Normal, Horizontal, Round, Full Circle) पाथ (Path) पर चलते हैं
+  else {
+    if (style === 'full_circle') {
+      // पूरा गोल (Zero)
+      const r = calcCircleRadius(name, fontSize);
+      pathD = `M ${centerX} ${pxY - r} a ${r},${r} 0 1,1 0,${r * 2} a ${r},${r} 0 1,1 0,${-r * 2}`;
+    } 
+    else if (style === 'round' || (curveVal !== 0 && !isNaN(curveVal))) {
+      // गोल या कर्व
+      let cVal = (style === 'round') ? 50 : curveVal;
+      let controlY = pxY - (cVal * 1.5);
+      pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
+    } 
+    else {
+      // सीधा (Normal और Horizontal)
+      pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
+    }
+
+    // 🔥 यहाँ से 'stroke="black"' हटा दिया गया है ताकि अक्षर कटे नहीं
     svgContent = `
       <path id="livePath" d="${pathD}" fill="transparent" />
-      <text font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2" pointer-events="none">
+      <text font-family="${fontFamily}" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" pointer-events="none">
         <textPath href="#livePath" startOffset="50%" text-anchor="middle">${name}</textPath>
       </text>
     `;
@@ -319,6 +336,11 @@ function applyManualText() {
   fd.append('fontSize', currentFontSize);
   fd.append('isBold', isBold ? 'bold' : 'normal');
   fd.append('isItalic', isItalic ? 'italic' : 'normal');
+  
+  // अगर फॉन्ट ड्रॉपडाउन है तो सर्वर पर भी भेजें
+  if ($('fontFamilySelect')) {
+    fd.append('fontFamily', $('fontFamilySelect').value);
+  }
 
   fetch('/api/manual-text', { method: 'POST', body: fd })
     .then(r => r.json())
