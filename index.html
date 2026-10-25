@@ -101,6 +101,29 @@
       </div>
     </div>
 
+    <!-- 🔥 NEW: CMYK कलर पिकर (यहाँ जोड़ा गया है) -->
+    <div style="margin-bottom: 12px; background: #0f172a; padding: 10px; border-radius: 8px;">
+      <label style="color:#fbbf24; font-weight:bold;">🎨 CMYK कलर (प्रिंटिंग के लिए)</label>
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 5px;">
+        <div>
+          <label style="font-size:10px;">C (0-100)</label>
+          <input type="number" id="cmykC" value="0" min="0" max="100" oninput="applyCMYK()" style="width:100%; padding:5px; text-align:center;">
+        </div>
+        <div>
+          <label style="font-size:10px;">M (0-100)</label>
+          <input type="number" id="cmykM" value="0" min="0" max="100" oninput="applyCMYK()" style="width:100%; padding:5px; text-align:center;">
+        </div>
+        <div>
+          <label style="font-size:10px;">Y (0-100)</label>
+          <input type="number" id="cmykY" value="0" min="0" max="100" oninput="applyCMYK()" style="width:100%; padding:5px; text-align:center;">
+        </div>
+        <div>
+          <label style="font-size:10px;">K (0-100)</label>
+          <input type="number" id="cmykK" value="0" min="0" max="100" oninput="applyCMYK()" style="width:100%; padding:5px; text-align:center;">
+        </div>
+      </div>
+    </div>
+
     <div style="margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
       <div>
         <label>फॉन्ट साइज: <span id="fontSizeVal" style="color:#fbbf24;">10</span></label>
@@ -201,4 +224,4 @@
 <footer><p>© AI Design Studio Pro</p></footer>
 <script src="script.js"></script>
 </body>
-  </html>
+      </html>
