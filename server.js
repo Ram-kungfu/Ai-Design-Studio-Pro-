@@ -83,30 +83,39 @@ async function callVectorizerAPI(buffer) {
   } catch (e) { throw new Error("Vectorizer API failed."); }
 }
 
-// 4. AI Background Generator (Recraft / Gemini / Pollinations)
+// 4. AI Background Generator (Gemini / Pollinations)
 async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
   const BG_SUFFIX = '. Background design only, vibrant, professional, no people, no text.';
   try {
     const payload = {
       contents: [{ parts: [{ text: prompt + BG_SUFFIX }] }],
-      // 🔥 यही सही फॉर्मेट है (v1beta के साथ imageConfig)
       generationConfig: { 
-        responseModalities: ['TEXT', 'IMAGE'], 
-        imageConfig: { aspectRatio: aspect } 
+        responseModalities: ['TEXT', 'IMAGE'],
+        // 🔥 सही फॉर्मेट (response_format के अंदर image और aspect_ratio)
+        response_format: { 
+          image: { aspect_ratio: aspect } 
+        }
       }
     };
+    
+    // 🔥 v1beta सही है, लेकिन सुनिश्चित करें कि GEM_URL में v1beta हो
     const r = await axios.post(`${GEM_URL}gemini-3.1-flash-image:generateContent`, payload, {
       headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' }, timeout: 180000
     });
+    
     for (const cand of r.data.candidates || []) {
       for (const part of cand.content?.parts || []) {
         const inl = part.inlineData || part.inline_data;
-        if (inl?.data) return Buffer.from(inl.data, 'base64');
+        if (inl?.data) {
+          console.log("✅ Gemini से इमेज मिल गई!");
+          return Buffer.from(inl.data, 'base64');
+        }
       }
     }
-    throw new Error("No image returned");
+    throw new Error("Gemini ने इमेज नहीं दी");
   } catch (e) {
-    // अगर Gemini फेल हो जाए, तो Pollinations.ai से बैकअप इमेज ले लें
+    console.error("❌ Gemini फेल हो गया, Pollinations पर जा रहे हैं। एरर:", e.message);
+    // फॉलबैक (Pollinations)
     const url = 'https://image.pollinations.ai/prompt/' + encodeURIComponent(prompt + BG_SUFFIX) + '?width=1024&height=1536&nologo=true&seed=' + Math.floor(Math.random() * 100000);
     const r = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
     return Buffer.from(r.data);
