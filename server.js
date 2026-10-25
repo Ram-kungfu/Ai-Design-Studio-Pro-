@@ -107,7 +107,7 @@ async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
   }
 }
 
-// 🔥 5. NEW: 3D स्टाइलिश टेक्स्ट बनाना
+// 5. 3D स्टाइलिश टेक्स्ट बनाना
 async function generateStylishText(text, style = '3D golden') {
   try {
     const prompt = `Generate a beautiful, high quality, transparent PNG (no background) of the text "${text}" written in ${style} font style. Make it look premium, 3D, and print-ready. The text should be perfectly aligned and centered.`;
@@ -136,8 +136,8 @@ async function generateStylishText(text, style = '3D golden') {
   }
 }
 
-// 6. Compose (Background + Cutout + Name/3D Text + Custom Size + Curve/Angle)
-async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null, curveVal = 0, angleVal = 0, textColor = '#ffffff') {
+// 6. Compose (सभी नए फीचर्स के साथ)
+async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null, curveVal = 0, angleVal = 0, textColor = '#ffffff', fontSizeVal = 10, boldVal = 'normal', italicVal = 'normal') {
   let W, H;
   if (customW && customH) {
     W = parseInt(customW);
@@ -159,7 +159,6 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
   const y = Math.floor((H - targetH) / 2 + H * 0.05);
   let composed = await sharp(bgCanvas).composite([{ input: cutResized, left: x, top: y }]).png().toBuffer();
 
-  // अगर AI से बना 3D टेक्स्ट है
   if (textImageBuf) {
     const textResized = await sharp(textImageBuf).resize({ width: Math.floor(W * 0.7) }).png().toBuffer();
     const textMeta = await sharp(textResized).metadata();
@@ -167,13 +166,12 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     const ty = Math.floor(H * 0.15);
     composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
   } 
-  // अगर सिंपल टेक्स्ट है (Curve और Angle के साथ)
   else if (name) {
-    const fs2 = Math.floor(H * 0.09);
+    // फॉन्ट साइज को % से पिक्सल में बदलें
+    const fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100)); 
     const pxX = W / 2;
     const pxY = H * 0.15;
     
-    // टेक्स्ट की चौड़ाई का अंदाजा (लगभग)
     const textLength = name.length * fs2 * 0.6; 
     const startX = pxX - textLength / 2;
     const endX = pxX + textLength / 2;
@@ -181,19 +179,18 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     let pathD = "";
     const curve = parseFloat(curveVal);
     
-    // कर्व (Curve) का लॉजिक
     if (curve === 0) {
-      pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`; // सीधा
+      pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
     } else {
-      const controlY = pxY - curve; 
-      pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`; // घुमावदार
+      const controlY = pxY - (curve * 3); 
+      pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
     }
     
     const uniqueId = "path_" + Date.now();
     
     const svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
       <path id="${uniqueId}" d="${pathD}" fill="transparent" />
-      <text font-family="sans-serif" font-weight="bold" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="4" transform="rotate(${angleVal} ${pxX} ${pxY})">
+      <text font-family="sans-serif" font-weight="${boldVal}" font-style="${italicVal}" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="${Math.max(2, Math.floor(fs2/20))}" transform="rotate(${angleVal} ${pxX} ${pxY})">
         <textPath href="#${uniqueId}" startOffset="50%" text-anchor="middle">${name}</textPath>
       </text>
     </svg>`;
@@ -254,10 +251,10 @@ function saveOut(buf, prefix, ext = 'png') {
 
 // ================= API ROUTES =================
 
-// 1. FULL AUTO (अब Curve और Angle के साथ)
+// 1. FULL AUTO (सभी फीचर्स के साथ)
 app.post('/api/auto', upload.single('image'), async (req, res) => {
   try {
-    const { prompt = '', name = '', aspect = '2:3', customW, customH, use3d = 'false', curve = 0, angle = 0 } = req.body;
+    const { prompt = '', name = '', aspect = '2:3', customW, customH, use3d = 'false', curve = 0, angle = 0, textColor = '#ffffff', fontSize = 10, isBold = 'normal', isItalic = 'normal' } = req.body;
     const inputBuf = fs.readFileSync(req.file.path);
     const steps = {};
 
@@ -278,8 +275,7 @@ app.post('/api/auto', upload.single('image'), async (req, res) => {
       textImg = await generateStylishText(name);
     }
 
-    // Curve और Angle पास करें
-    const final = await callKittlComposeAPI(bg, hd, aspect, name, textImg, customW, customH, curve, angle);
+    const final = await callKittlComposeAPI(bg, hd, aspect, name, textImg, customW, customH, curve, angle, textColor, fontSize, isBold, isItalic);
     steps.finalPreview = saveOut(await addWatermark(final), 'final_wm');
     steps.finalRaw = saveOut(final, 'final');
 
@@ -414,11 +410,11 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
   }
 });
 
-// 9. 🔥 MANUAL TEXT PLACEMENT (ड्रैग एंड ड्रॉप + Curve/Angle)
+// 9. MANUAL TEXT PLACEMENT (सभी स्टाइल्स के साथ)
 app.post('/api/manual-text', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
-    const { name = '', textX = 50, textY = 20, textStyle = 'normal', textColor = '#ffffff', curve = 0, angle = 0 } = req.body;
+    const { name = '', textX = 50, textY = 20, textStyle = 'normal', textColor = '#ffffff', curve = 0, angle = 0, fontSize = 10, isBold = 'normal', isItalic = 'normal' } = req.body;
     
     if (!name) throw new Error("कृपया नाम लिखें");
 
@@ -428,28 +424,45 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
 
     const pxX = Math.floor((parseFloat(textX) / 100) * W);
     const pxY = Math.floor((parseFloat(textY) / 100) * H);
-    const fs2 = Math.floor(H * 0.09);
+    const fs2 = Math.floor(H * (parseFloat(fontSize) / 100));
 
-    // कर्व और एंगल का लॉजिक
-    const textLength = name.length * fs2 * 0.6;
-    const startX = pxX - textLength / 2;
-    const endX = pxX + textLength / 2;
-    let pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
-    
-    const curveFloat = parseFloat(curve);
-    if (curveFloat !== 0) {
-      const controlY = pxY - curveFloat;
-      pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
+    let finalTransform = `rotate(${angle} ${pxX} ${pxY})`;
+    let svgText = "";
+
+    if (textStyle === 'vertical') {
+      // खड़ा (Vertical)
+      svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+        <text x="${pxX}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="${Math.max(2, Math.floor(fs2/20))}" transform="rotate(90 ${pxX} ${pxY})">${name}</text>
+      </svg>`;
+    } else {
+      const textLength = name.length * fs2 * 0.6;
+      const startX = pxX - textLength / 2;
+      const endX = pxX + textLength / 2;
+      let pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
+      
+      const curveFloat = parseFloat(curve);
+      if (textStyle === 'round') {
+        // गोल (Round)
+        const r = textLength / 2;
+        pathD = `M ${startX} ${pxY + r/2} A ${r} ${r} 0 0 1 ${endX} ${pxY + r/2}`;
+      } else if (textStyle === 'rotate') {
+        // तिरछा (Rotate)
+        finalTransform = `rotate(45 ${pxX} ${pxY})`; 
+      } else if (curveFloat !== 0) {
+        // कर्व स्लाइडर (Curve)
+        const controlY = pxY - (curveFloat * 3);
+        pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
+      }
+
+      const uniqueId = "manual_path_" + Date.now();
+      
+      svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
+        <path id="${uniqueId}" d="${pathD}" fill="transparent" />
+        <text font-family="sans-serif" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="${Math.max(2, Math.floor(fs2/20))}" transform="${finalTransform}">
+          <textPath href="#${uniqueId}" startOffset="50%" text-anchor="middle">${name}</textPath>
+        </text>
+      </svg>`;
     }
-
-    const uniqueId = "manual_path_" + Date.now();
-    
-    let svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-      <path id="${uniqueId}" d="${pathD}" fill="transparent" />
-      <text font-family="sans-serif" font-weight="bold" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="4" transform="rotate(${angle} ${pxX} ${pxY})">
-        <textPath href="#${uniqueId}" startOffset="50%" text-anchor="middle">${name}</textPath>
-      </text>
-    </svg>`;
 
     const finalImg = await sharp(buf).composite([{ input: Buffer.from(svgText), top: 0, left: 0 }]).png().toBuffer();
     
