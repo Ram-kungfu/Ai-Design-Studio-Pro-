@@ -118,6 +118,26 @@ function toggleItalic() {
   updateEditorText();
 }
 
+// 🔥 CMYK से RGB में बदलने का फंक्शन
+function applyCMYK() {
+  const c = parseFloat($('cmykC').value) / 100;
+  const m = parseFloat($('cmykM').value) / 100;
+  const y = parseFloat($('cmykY').value) / 100;
+  const k = parseFloat($('cmykK').value) / 100;
+
+  // CMYK to RGB Math
+  let r = Math.round(255 * (1 - c) * (1 - k));
+  let g = Math.round(255 * (1 - m) * (1 - k));
+  let b = Math.round(255 * (1 - y) * (1 - k));
+
+  // RGB to Hex
+  const hex = "#" + (1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1).toUpperCase();
+  
+  // RGB पिकर और टेक्स्ट को अपडेट करें
+  $('textColorPicker').value = hex;
+  updateEditorText();
+}
+
 // 🔥 टेक्स्ट को SVG में बदलकर कर्व और स्टाइल्स लाइव दिखाएँ
 function updateEditorText() {
   if (!draggableText) return;
