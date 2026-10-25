@@ -6,7 +6,6 @@
 <title>AI Design Studio Pro</title>
 <link rel="stylesheet" href="style.css" />
 <style>
-  /* Drag & Drop Editor के लिए नया स्टाइल */
   .editor-container {
     position: relative;
     width: 100%;
@@ -17,7 +16,7 @@
     border-radius: 10px;
     overflow: hidden;
     touch-action: none;
-    min-height: 150px; /* अगर इमेज न हो तो भी बॉक्स दिखे */
+    min-height: 150px;
   }
   .editor-container img {
     width: 100%;
@@ -32,10 +31,6 @@
     left: 50%;
     transform: translate(-50%, -50%);
     cursor: grab;
-    font-weight: bold;
-    font-family: sans-serif;
-    color: white;
-    text-shadow: 2px 2px 4px black;
     user-select: none;
     padding: 5px;
     white-space: nowrap;
@@ -49,7 +44,6 @@
 </header>
 
 <main class="container">
-  <!-- 1. फोटो अपलोड -->
   <section class="card">
     <h2>1️⃣ डिज़ाइन/फोटो अपलोड करें</h2>
     <div class="dropzone" id="dropzone">
@@ -59,11 +53,9 @@
     </div>
   </section>
 
-  <!-- 2. सेटिंग्स और Live Editor -->
   <section class="card">
     <h2>2️⃣ सेटिंग्स</h2>
     
-    <!-- नाम / टेक्स्ट और 3D चेकबॉक्स -->
     <div style="margin-bottom: 12px;">
       <label>नाम / टेक्स्ट:</label>
       <input type="text" id="nameInput" placeholder="e.g. RAHUL" oninput="updateEditorText()" />
@@ -74,17 +66,17 @@
       </div>
     </div>
 
-    <!-- 🔥 टेक्स्ट स्टाइल और स्लाइडर्स -->
     <div style="margin-bottom: 12px;">
       <label>टेक्स्ट स्टाइल:</label>
       <select id="textStyleSelect" onchange="updateEditorText()">
         <option value="normal">सीधा (Normal)</option>
         <option value="horizontal">होरिजेंटल (Horizontal)</option>
+        <option value="rotate">तिरछा (Rotate)</option>
+        <option value="round">गोल (Round)</option>
         <option value="vertical">खड़ा (Vertical)</option>
       </select>
     </div>
 
-    <!-- 🔥 NEW: Custom Curve और Angle स्लाइडर -->
     <div style="margin-bottom: 12px; background: #0f172a; padding: 10px; border-radius: 8px;">
       <label>वक्रता (Curve): <span id="curveVal" style="color:#fbbf24;">0</span></label>
       <input type="range" id="curveSlider" min="-100" max="100" value="0" oninput="updateCurveValue()" style="width: 100%;">
@@ -93,18 +85,36 @@
       <input type="range" id="angleSlider" min="-180" max="180" value="0" oninput="updateAngleValue()" style="width: 100%;">
     </div>
 
-    <!-- टेक्स्ट का रंग -->
-    <div style="margin-bottom: 12px;">
-      <label>टेक्स्ट का रंग:</label>
-      <select id="textColorSelect" onchange="updateEditorText()">
-        <option value="#ffffff">White</option>
-        <option value="#fbbf24">Golden</option>
-        <option value="#ff0000">Red</option>
-        <option value="#000000">Black</option>
-      </select>
+    <div style="margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+      <div>
+        <label>प्रीसेट रंग:</label>
+        <select id="textColorSelect" onchange="syncColorPicker()" style="width: 100%; padding: 10px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 8px;">
+          <option value="#ffffff">White</option>
+          <option value="#fbbf24">Golden</option>
+          <option value="#ff0000">Red</option>
+          <option value="#000000">Black</option>
+        </select>
+      </div>
+      <div>
+        <label>कस्टम रंग (RGB):</label>
+        <input type="color" id="textColorPicker" value="#ffffff" oninput="updateEditorText()" style="width: 100%; height: 40px; border: none; border-radius: 8px; cursor: pointer; padding: 0;">
+      </div>
     </div>
 
-    <!-- साइज़ और कस्टम साइज़ -->
+    <div style="margin-bottom: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+      <div>
+        <label>फॉन्ट साइज: <span id="fontSizeVal" style="color:#fbbf24;">10</span></label>
+        <input type="range" id="fontSizeSlider" min="2" max="30" value="10" oninput="updateFontSize()" style="width: 100%;">
+      </div>
+      <div>
+        <label>फॉन्ट स्टाइल:</label>
+        <div style="display: flex; gap: 5px;">
+          <button id="boldBtn" class="btn small" style="flex:1; font-weight: bold;" onclick="toggleBold()">B</button>
+          <button id="italicBtn" class="btn small" style="flex:1; font-style: italic;" onclick="toggleItalic()">I</button>
+        </div>
+      </div>
+    </div>
+
     <div>
       <label>साइज़:</label>
       <select id="aspectSelect">
@@ -114,7 +124,6 @@
         <option value="custom">Custom Size (कस्टम साइज़)</option>
       </select>
       
-      <!-- कस्टम साइज़ के लिए बॉक्स -->
       <div id="customSizeBox" style="display: none; margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 8px; border: 1px dashed #475569;">
         <label>चौड़ाई (Width in pixels):</label>
         <input type="number" id="customW" placeholder="e.g. 2000" style="margin-bottom: 8px;">
@@ -123,22 +132,19 @@
       </div>
     </div>
 
-    <!-- AI प्रॉम्प्ट -->
     <label style="margin-top: 12px;">AI बैकग्राउंड प्रॉम्प्ट:</label>
     <textarea id="promptInput" rows="2" placeholder="gold luxury background"></textarea>
 
-    <!-- 🔥 NEW: Live Editor Area (इमेज छिपी रहेगी जब तक अपलोड न हो) -->
     <h2 style="margin-top: 20px;">✋ टेक्स्ट को खींचकर सेट करें (Drag & Drop)</h2>
     <p class="hint">टेक्स्ट लिखने के बाद उसे उंगली से पकड़कर डिज़ाइन पर कहीं भी ले जाएँ।</p>
     
     <div class="editor-container" id="editorContainer">
       <img id="editorBg" src="" alt="" style="display: none;" /> 
-      <div class="draggable-text" id="draggableText">RAHUL</div>
+      <div class="draggable-text" id="draggableText"></div>
     </div>
     <button class="btn small" onclick="applyManualText()">✅ इस जगह टेक्स्ट फिट करें</button>
   </section>
 
-  <!-- 3. AI टूल्स -->
   <section class="card">
     <h2>3️⃣ AI टूल्स</h2>
     <div class="tabs">
@@ -182,7 +188,6 @@
     </div>
   </section>
 
-  <!-- 4. नतीजा -->
   <section class="card" id="resultCard">
     <h2>4️⃣ नतीजा (Results)</h2>
     <div id="statusBar" class="status">तैयार...</div>
@@ -196,4 +201,4 @@
 <footer><p>© AI Design Studio Pro</p></footer>
 <script src="script.js"></script>
 </body>
-</html>
+  </html>
