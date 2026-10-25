@@ -6,7 +6,7 @@
 <title>AI Design Studio Pro</title>
 <link rel="stylesheet" href="style.css" />
 <style>
-  /* पुराना स्टाइल वैसा ही रहेगा */
+  /* 🔥 Improved CSS — पुराना + नया दोनों का best */
   .editor-container {
     position: relative;
     width: 100%;
@@ -15,19 +15,20 @@
     background: #0f172a;
     border: 2px dashed #fbbf24;
     border-radius: 10px;
-    overflow: hidden;
+    overflow: visible;              /* 🔥 SVG overflow के लिए — full_circle के लिए ज़रूरी */
     touch-action: none;
-    min-height: 200px; /* थोड़ा बड़ा किया गया है */
+    min-height: 250px;              /* 🔥 font 120px तक fit हो */
   }
   .editor-container img {
     width: 100%;
     display: block;
     user-select: none;
     pointer-events: none;
-    min-height: 200px;
+    min-height: 250px;
+    object-fit: contain;            /* 🔥 image distort न हो */
   }
   
-  /* 🔥 नया: ड्रैग करने वाला बॉक्स */
+  /* 🔥 ड्रैग करने वाला बॉक्स */
   .draggable-text {
     position: absolute;
     top: 50%;
@@ -38,14 +39,16 @@
     padding: 5px;
     white-space: nowrap;
     border: 2px dashed transparent; /* शुरू में बॉर्डर नहीं दिखेगा */
+    pointer-events: auto;
+    z-index: 5;                     /* 🔥 टेक्स्ट हमेशा ऊपर */
   }
 
-  /* 🔥 नया: जब टेक्स्ट सेलेक्ट होगा तो बॉर्डर दिखेगा */
+  /* 🔥 जब टेक्स्ट सेलेक्ट होगा तो बॉर्डर दिखेगा */
   .draggable-text.selected {
     border-color: #fbbf24;
   }
 
-  /* 🔥 नया: बटन (Handles) का डिज़ाइन */
+  /* 🔥 बटन (Handles) का डिज़ाइन */
   .handle {
     position: absolute;
     width: 20px;
@@ -53,14 +56,15 @@
     background: #fbbf24;
     border: 2px solid #0f172a;
     border-radius: 50%;
-    display: none; /* शुरू में छिपे रहेंगे */
+    display: none;                  /* शुरू में छिपे रहेंगे */
     z-index: 10;
+    pointer-events: auto;
   }
   .draggable-text.selected .handle {
     display: block;
   }
 
-  /* छोटा-बड़ा करने वाला बटन (नीचे दाएँ) */
+  /* छोटा-बड़ा करने वाला बटन (नीचे दाएँ) */
   .handle.resize {
     bottom: -10px;
     right: -10px;
@@ -72,7 +76,7 @@
     top: -30px;
     left: 50%;
     transform: translateX(-50%);
-    background: #3b82f6; /* नीला रंग */
+    background: #3b82f6;            /* नीला रंग */
     cursor: grab;
   }
 </style>
@@ -113,7 +117,7 @@
         <option value="horizontal">होरिजेंटल (Horizontal)</option>
         <option value="rotate">तिरछा (Rotate)</option>
         <option value="round">गोल (Round)</option>
-        <option value="full_circle">पूरा गोल - जीरो (Full Circle)</option> <!-- 🔥 यह नया जोड़ा गया है -->
+        <option value="full_circle">पूरा गोल - जीरो (Full Circle)</option>
         <option value="vertical">खड़ा (Vertical)</option>
       </select>
     </div>
@@ -142,7 +146,7 @@
       </div>
     </div>
 
-    <!-- 🔥 NEW: CMYK कलर पिकर -->
+    <!-- 🔥 CMYK कलर पिकर -->
     <div style="margin-bottom: 12px; background: #0f172a; padding: 10px; border-radius: 8px;">
       <label style="color:#fbbf24; font-weight:bold;">🎨 CMYK कलर (प्रिंटिंग के लिए)</label>
       <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-top: 5px;">
@@ -265,4 +269,4 @@
 <footer><p>© AI Design Studio Pro</p></footer>
 <script src="script.js"></script>
 </body>
-  </html>
+            </html>
