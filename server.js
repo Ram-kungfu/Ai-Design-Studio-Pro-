@@ -35,7 +35,7 @@ const KEYS = {
 
 // ================= AI FUNCTIONS =================
 
-// 1. Remove Background
+// 1. Remove Background (Clipdrop / Remove.bg)
 async function callRemoveBgAPI(buffer, person = false) {
   const fd = new FormData();
   fd.append('image_file', buffer, { filename: 'img.png' });
@@ -50,7 +50,7 @@ async function callRemoveBgAPI(buffer, person = false) {
   } catch (e) { throw new Error("Background removal failed."); }
 }
 
-// 2. HD Upscale
+// 2. HD Upscale (Topaz / DeepAI)
 async function callHDUpscaleAPI(buffer) {
   try {
     const src = await sharp(buffer).resize({ width: 1200, withoutEnlargement: true }).png().toBuffer();
@@ -67,7 +67,7 @@ async function callHDUpscaleAPI(buffer) {
   }
 }
 
-// 3. Vectorize (Tracing)
+// 3. Vectorize (Vectorizer.AI)
 async function callVectorizerAPI(buffer) {
   const fd = new FormData();
   fd.append('image', await sharp(buffer).flatten({ background: '#ffffff' }).png().toBuffer(), { filename: 'design.png' });
@@ -82,7 +82,7 @@ async function callVectorizerAPI(buffer) {
   } catch (e) { throw new Error("Vectorizer API failed."); }
 }
 
-// 4. AI Background Generator
+// 4. AI Background Generator (Recraft / Gemini / Pollinations)
 async function callRecraftStabilityAPI(prompt, aspect = '2:3') {
   const BG_SUFFIX = '. Background design only, vibrant, professional, no people, no text.';
   try {
@@ -136,7 +136,7 @@ async function generateStylishText(text, style = '3D golden') {
   }
 }
 
-// 6. Compose (WordArt Curve के साथ सभी फीचर्स)
+// 6. Compose (सभी नए फीचर्स के साथ - WordArt Curve, RGB, Bold, Italic, Font Size)
 async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = null, customW = null, customH = null, curveVal = 0, angleVal = 0, textColor = '#ffffff', fontSizeVal = 10, boldVal = 'normal', italicVal = 'normal') {
   let W, H;
   if (customW && customH) {
@@ -159,6 +159,7 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
   const y = Math.floor((H - targetH) / 2 + H * 0.05);
   let composed = await sharp(bgCanvas).composite([{ input: cutResized, left: x, top: y }]).png().toBuffer();
 
+  // 3D टेक्स्ट (AI द्वारा बनाया गया)
   if (textImageBuf) {
     const textResized = await sharp(textImageBuf).resize({ width: Math.floor(W * 0.7) }).png().toBuffer();
     const textMeta = await sharp(textResized).metadata();
@@ -166,6 +167,7 @@ async function callKittlComposeAPI(bgBuf, cutBuf, aspect, name, textImageBuf = n
     const ty = Math.floor(H * 0.15);
     composed = await sharp(composed).composite([{ input: textResized, left: tx, top: ty }]).png().toBuffer();
   } 
+  // सिंपल टेक्स्ट (WordArt Curve, Angle, Color, Bold, Italic के साथ)
   else if (name) {
     const fs2 = Math.floor(H * (parseFloat(fontSizeVal) / 100)); 
     const pxX = W / 2;
@@ -314,7 +316,7 @@ app.post('/api/split-and-trace', upload.single('image'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 3. CUTOUT
+// 3. CUTOUT ONLY
 app.post('/api/cutout', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
@@ -326,7 +328,7 @@ app.post('/api/cutout', upload.single('image'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 4. UPSCALE
+// 4. UPSCALE ONLY
 app.post('/api/upscale', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
@@ -410,7 +412,7 @@ app.post('/api/3d-text', upload.single('image'), async (req, res) => {
   }
 });
 
-// 9. MANUAL TEXT PLACEMENT (WordArt Curve के साथ)
+// 9. MANUAL TEXT PLACEMENT (WordArt Curve के साथ - ड्रैग एंड ड्रॉप के लिए)
 app.post('/api/manual-text', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
@@ -430,6 +432,7 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
     let svgText = "";
 
     if (textStyle === 'vertical') {
+      // खड़ा (Vertical)
       svgText = `<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
         <text x="${pxX}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-weight="${isBold}" font-style="${isItalic}" font-size="${fs2}" fill="${textColor}" stroke="black" stroke-width="${Math.max(2, Math.floor(fs2/20))}" transform="rotate(90 ${pxX} ${pxY})">${name}</text>
       </svg>`;
@@ -446,6 +449,9 @@ app.post('/api/manual-text', upload.single('image'), async (req, res) => {
         // गोल (Arc) - Quadratic Curve
         const controlY = pxY - (50 * 3); // Fixed curve for 'round' style
         pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
+      } else if (textStyle === 'rotate') {
+        // तिरछा (Rotate)
+        finalTransform = `rotate(45 ${pxX} ${pxY})`; 
       } else if (curveFloat !== 0) {
         const controlY = pxY - (curveFloat * 3);
         pathD = `M ${startX} ${pxY} Q ${pxX} ${controlY} ${endX} ${pxY}`;
