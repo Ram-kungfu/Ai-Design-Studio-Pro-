@@ -41,11 +41,11 @@ function handleFile(file) {
   reader.onload = ev => {
     previewImg.src = ev.target.result;
     previewImg.classList.remove('hidden');
-    
+
     const editorBg = $('editorBg');
     editorBg.src = ev.target.result;
-    editorBg.style.display = 'block'; 
-    
+    editorBg.style.display = 'block';
+
     dropText.textContent = `✅ ${file.name}`;
   };
   reader.readAsDataURL(file);
@@ -57,7 +57,7 @@ const editorContainer = $('editorContainer');
 
 if (draggableText && editorContainer) {
   draggableText.addEventListener('pointerdown', (e) => {
-    if (e.target.classList.contains('handle')) return; 
+    if (e.target.classList.contains('handle')) return;
     draggableText.classList.add('selected');
     isDragging = true;
     draggableText.style.cursor = 'grabbing';
@@ -92,8 +92,8 @@ if (draggableText && editorContainer) {
       let dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
       let scaleFactor = dist / startDist;
       let newSize = Math.round(startFontSize * scaleFactor);
-      newSize = Math.max(2, Math.min(50, newSize)); 
-      
+      newSize = Math.max(2, Math.min(50, newSize));
+
       currentFontSize = newSize;
       $('fontSizeSlider').value = currentFontSize;
       $('fontSizeVal').textContent = currentFontSize;
@@ -103,9 +103,9 @@ if (draggableText && editorContainer) {
     if (isRotating) {
       let angleRad = Math.atan2(e.clientY - centerY, e.clientX - centerX);
       let angleDeg = (angleRad * 180) / Math.PI;
-      
+
       currentAngle = Math.round(angleDeg + 90);
-      
+
       $('angleSlider').value = currentAngle;
       $('angleVal').textContent = currentAngle;
       updateEditorText();
@@ -126,7 +126,7 @@ function setupHandles() {
 
   const resizeHandle = document.createElement('div');
   resizeHandle.className = 'handle resize';
-  
+
   const rotateHandle = document.createElement('div');
   rotateHandle.className = 'handle rotate';
 
@@ -135,7 +135,7 @@ function setupHandles() {
     const rect = editorContainer.getBoundingClientRect();
     const centerX = rect.left + (currentX / 100) * rect.width;
     const centerY = rect.top + (currentY / 100) * rect.height;
-    
+
     isResizing = true;
     startDist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
     startFontSize = currentFontSize;
@@ -206,6 +206,20 @@ function applyCMYK() {
   updateEditorText();
 }
 
+// ============================================================
+// 🔥 HELPER: DYNAMIC FULL CIRCLE (छोटा/बड़ा अपने आप fit)
+// ============================================================
+// text.length × fontSize × 0.6  =  approx text width
+// Circumference = 2πr  =>  r = textWidth / (2π)
+// यही गोला छोटे शब्द पर छोटा, बड़े शब्द पर बड़ा बनेगा।
+function calcCircleRadius(text, fontSizePx) {
+  const approxTextWidth = text.length * fontSizePx * 0.6;
+  let r = approxTextWidth / (2 * Math.PI);
+  // safety only — 1-2 अक्षर पर path degenerate न हो
+  if (r < 10) r = 10;
+  return r;
+}
+
 // 🔥 टेक्स्ट और कर्व अपडेट करने का सही लॉजिक (Dynamic Full Circle)
 function updateEditorText() {
   if (!draggableText) return;
@@ -214,8 +228,8 @@ function updateEditorText() {
   const color = $('textColorPicker').value;
   const fontWeight = isBold ? 'bold' : 'normal';
   const fontStyle = isItalic ? 'italic' : 'normal';
-  
-  const w = 400; 
+
+  const w = 400;
   const h = 150;
   const pxY = h / 2;
   const fontSize = currentFontSize * 4;
@@ -227,18 +241,15 @@ function updateEditorText() {
   const endX = w - 30;
   const centerX = w / 2;
   const curveVal = parseFloat(currentCurve);
-  
+
   if (style === 'full_circle') {
-    // 🔥 डायनामिक गोला: टेक्स्ट के साइज़ के हिसाब से गोले का रेडियस बढ़ेगा
-    const textLen = name.length * fontSize * 0.6;
-    let r = textLen / (2 * Math.PI); 
-    if (r < 40) r = 40; 
-    
-    pathD = `M ${centerX} ${pxY - r} A ${r} ${r} 0 1 1 ${centerX} ${pxY + r} A ${r} ${r} 0 1 1 ${centerX} ${pxY - r}`;
-  } 
+    // 🔥 DYNAMIC गोला: टेक्स्ट जितना लंबा, गोला उतना बड़ा
+    const r = calcCircleRadius(name, fontSize);
+    pathD = `M ${centerX} ${pxY - r} a ${r},${r} 0 1,1 0,${r * 2} a ${r},${r} 0 1,1 0,${-r * 2}`;
+  }
   else if (style === 'round' || (curveVal !== 0 && !isNaN(curveVal))) {
     let cVal = (style === 'round') ? 50 : curveVal;
-    let controlY = pxY - (cVal * 1.5); 
+    let controlY = pxY - (cVal * 1.5);
     pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
   } else {
     pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
@@ -247,7 +258,7 @@ function updateEditorText() {
   let svgContent = "";
 
   if (style === 'vertical') {
-    svgContent = `<text x="${w/2}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2">${name}</text>`;
+    svgContent = `<text x="${w / 2}" y="${pxY}" text-anchor="middle" font-family="sans-serif" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" stroke="black" stroke-width="2">${name}</text>`;
   } else {
     svgContent = `
       <path id="livePath" d="${pathD}" fill="transparent" />
@@ -259,19 +270,19 @@ function updateEditorText() {
 
   const svgWrapper = document.createElement('div');
   svgWrapper.innerHTML = `
-    <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="pointer-events: none;">
+    <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="pointer-events: none; overflow: visible;">
       ${svgContent}
     </svg>
   `;
-  
+
   const oldSvg = draggableText.querySelector('svg');
   if (oldSvg) oldSvg.remove();
   draggableText.insertBefore(svgWrapper.firstElementChild, draggableText.firstChild);
-  
+
   setupHandles();
 }
 
-document.getElementById('aspectSelect').addEventListener('change', function() {
+document.getElementById('aspectSelect').addEventListener('change', function () {
   const box = document.getElementById('customSizeBox');
   if (this.value === 'custom') {
     box.style.display = 'block';
@@ -284,9 +295,9 @@ function applyManualText() {
   const name = $('nameInput').value;
   if (!name) return alert('पहले नाम लिखें');
   if (!currentFile) return alert('पहले फोटो अपलोड करें');
-  
+
   clearGrid(); setStatus('टेक्स्ट सेट हो रहा है...'); toggleButtons(true);
-  
+
   const fd = new FormData();
   fd.append('image', currentFile);
   fd.append('name', name);
@@ -325,14 +336,14 @@ function showThumb(url, label) {
   $('resultGrid').appendChild(div);
 }
 
-function clearGrid() { 
-  $('resultGrid').innerHTML = ''; 
-  $('layerResults').innerHTML = ''; 
-  $('downloadBar').classList.add('hidden'); 
+function clearGrid() {
+  $('resultGrid').innerHTML = '';
+  $('layerResults').innerHTML = '';
+  $('downloadBar').classList.add('hidden');
 }
 
-function toggleButtons(disable) { 
-  document.querySelectorAll('.btn').forEach(b => b.disabled = disable); 
+function toggleButtons(disable) {
+  document.querySelectorAll('.btn').forEach(b => b.disabled = disable);
 }
 
 // ==========================================
@@ -341,7 +352,7 @@ function toggleButtons(disable) {
 async function runAuto() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
   clearGrid(); setStatus('FULL AUTO चल रहा है...'); toggleButtons(true);
-  
+
   const fd = new FormData();
   fd.append('image', currentFile);
   fd.append('prompt', $('promptInput').value || 'luxury gold background');
@@ -356,23 +367,24 @@ async function runAuto() {
   fd.append('fontSize', currentFontSize);
   fd.append('isBold', isBold ? 'bold' : 'normal');
   fd.append('isItalic', isItalic ? 'italic' : 'normal');
+  fd.append('textStyle', $('textStyleSelect').value);
 
   try {
     const r = await fetch('/api/auto', { method: 'POST', body: fd });
     const data = await r.json();
     if (data.error) throw new Error(data.error);
-    
+
     if (data.steps.cutPreview) showThumb(data.steps.cutPreview, '✂️ कटआउट');
     if (data.steps.finalPreview) showThumb(data.steps.finalPreview, '✅ Final');
-    
+
     $('downloadFull').href = data.steps.finalRaw;
     $('downloadPreview').href = data.steps.finalPreview;
     $('downloadBar').classList.remove('hidden');
     setStatus('✅ तैयार!', 'ok');
-  } catch (e) { 
-    setStatus('❌ ' + e.message, 'err'); 
-  } finally { 
-    toggleButtons(false); 
+  } catch (e) {
+    setStatus('❌ ' + e.message, 'err');
+  } finally {
+    toggleButtons(false);
   }
 }
 
@@ -418,12 +430,12 @@ async function runVariations() {
     const r = await fetch('/api/variations', { method: 'POST', body: fd });
     const data = await r.json();
     if (data.error) throw new Error(data.error);
-    data.variations.forEach((url, i) => showThumb(url, `✨ डिज़ाइन ${i+1}`));
+    data.variations.forEach((url, i) => showThumb(url, `✨ डिज़ाइन ${i + 1}`));
     setStatus('✅ 4 डिज़ाइन तैयार!', 'ok');
-  } catch (e) { 
-    setStatus('❌ ' + e.message, 'err'); 
-  } finally { 
-    toggleButtons(false); 
+  } catch (e) {
+    setStatus('❌ ' + e.message, 'err');
+  } finally {
+    toggleButtons(false);
   }
 }
 
@@ -441,10 +453,10 @@ async function runVector() {
     $('downloadFull').href = d.url;
     $('downloadBar').classList.remove('hidden');
     setStatus('✅ वेक्टर PDF तैयार', 'ok');
-  } catch (e) { 
-    setStatus('❌ ' + e.message, 'err'); 
-  } finally { 
-    toggleButtons(false); 
+  } catch (e) {
+    setStatus('❌ ' + e.message, 'err');
+  } finally {
+    toggleButtons(false);
   }
 }
 
@@ -461,10 +473,10 @@ async function runCutout() {
     if (d.error) throw new Error(d.error);
     showThumb(d.preview, '✂️ कटिंग');
     setStatus('✅ हो गया', 'ok');
-  } catch (e) { 
-    setStatus('❌ ' + e.message, 'err'); 
-  } finally { 
-    toggleButtons(false); 
+  } catch (e) {
+    setStatus('❌ ' + e.message, 'err');
+  } finally {
+    toggleButtons(false);
   }
 }
 
@@ -481,10 +493,10 @@ async function runUpscale() {
     if (d.error) throw new Error(d.error);
     showThumb(d.preview, '🔼 HD');
     setStatus('✅ हो गया', 'ok');
-  } catch (e) { 
-    setStatus('❌ ' + e.message, 'err'); 
-  } finally { 
-    toggleButtons(false); 
+  } catch (e) {
+    setStatus('❌ ' + e.message, 'err');
+  } finally {
+    toggleButtons(false);
   }
 }
 
