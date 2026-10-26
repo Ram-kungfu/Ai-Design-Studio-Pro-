@@ -5,20 +5,18 @@ import io, base64
 from PIL import Image
 import cv2
 import numpy as np
-from rembg import remove, new_session  # 🔥 new_session यहाँ जोड़ा है
+from rembg import remove, new_session
 import uvicorn
 import os
 import multiprocessing
 
-# FastAPI ऐप बनाएँ
 app = FastAPI(title="SAM Layer Splitter")
 
-# 🔥 सर्वर शुरू होते ही मॉडल लोड कर लेंगे ताकि बार-बार लोड न हो और टाइमआउट न हो
-print("Loading U2Net Model...")
-session = new_session("u2net")
+# 🔥 हल्का मॉडल (u2netp) - 512MB रैम के लिए
+print("Loading U2Netp Model...")
+session = new_session("u2netp")  
 print("Model Loaded Successfully!")
 
-# CORS सेटिंग्स (फ्रंटएंड से कनेक्ट होने के लिए - यह सबसे ज़रूरी है)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -27,19 +25,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ==========================================
-# 1. आपका पुराना रास्ता (EndPoint)
-# ==========================================
 @app.post("/split-layers")
 async def split_layers(file: UploadFile = File(...)):
     try:
         contents = await file.read()
         input_image = Image.open(io.BytesIO(contents)).convert("RGBA")
-        
-        # 1. बैकग्राउंड हटाएं (session का इस्तेमाल करें)
         cutout = remove(input_image, session=session)
-        
-        # 2. OpenCV से हर हिस्से को ढूँढें
         img_np = np.array(cutout)
         alpha_channel = img_np[:, :, 3]
         _, mask = cv2.threshold(alpha_channel, 10, 255, cv2.THRESH_BINARY)
@@ -47,12 +38,10 @@ async def split_layers(file: UploadFile = File(...)):
         
         layers_base64 = []
         for i, cnt in enumerate(contours):
-            if cv2.contourArea(cnt) < 500: continue # छोटे कचरे छोड़ें
-                
+            if cv2.contourArea(cnt) < 500: continue
             layer = np.zeros_like(img_np)
             cv2.drawContours(layer, [cnt], -1, (255, 255, 255, 255), thickness=cv2.FILLED)
             result_layer = cv2.bitwise_and(img_np, layer)
-            
             final_img = Image.fromarray(result_layer)
             buffered = io.BytesIO()
             final_img.save(buffered, format="PNG")
@@ -63,10 +52,6 @@ async def split_layers(file: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-
-# ==========================================
-# 2. लेयर + वेक्टर (Layer + Vector) के लिए स्क्रिप्ट वाला रास्ता
-# ==========================================
 @app.post("/api/split-and-trace")
 async def split_and_trace_script_format(file: UploadFile = File(...)):
     try:
@@ -80,69 +65,42 @@ async def split_and_trace_script_format(file: UploadFile = File(...)):
         
         results = []
         layer_number = 1
-        
         for i, cnt in enumerate(contours):
             if cv2.contourArea(cnt) < 500: continue
-                
             layer = np.zeros_like(img_np)
             cv2.drawContours(layer, [cnt], -1, (255, 255, 255, 255), thickness=cv2.FILLED)
             result_layer = cv2.bitwise_and(img_np, layer)
-            
             final_img = Image.fromarray(result_layer)
             buffered = io.BytesIO()
             final_img.save(buffered, format="PNG")
-            
-            # Base64 इमेज बनाएँ
             img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
             img_data_url = f"data:image/png;base64,{img_b64}"
-            
-            # स्क्रिप्ट को जो फॉर्मेट चाहिए, वही भेजें
             results.append({
                 "layerNumber": layer_number,
                 "previewPng": img_data_url,
                 "rawPng": img_data_url,
-                "vectorPdf": img_data_url  # अभी के लिए पीएनजी ही पीडीएफ की जगह भेज रहे हैं
+                "vectorPdf": img_data_url
             })
             layer_number += 1
-
         return JSONResponse({"results": results})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-
-# ==========================================
-# 3. सीधा कट + वेक्टर (Direct Vector) के लिए स्क्रिप्ट वाला रास्ता
-# ==========================================
 @app.post("/api/direct-vector")
 async def direct_vector(file: UploadFile = File(...)):
     try:
         contents = await file.read()
         input_image = Image.open(io.BytesIO(contents)).convert("RGBA")
-        
-        # बैकग्राउंड हटाएं
         cutout = remove(input_image, session=session)
-        
-        # कटआउट को बेस64 में बदलें
         buffered = io.BytesIO()
         cutout.save(buffered, format="PNG")
         img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
         img_data_url = f"data:image/png;base64,{img_b64}"
-        
-        # स्क्रिप्ट को जो फॉर्मेट चाहिए, वही भेजें
-        results = [{
-            "previewPng": img_data_url,
-            "rawPng": img_data_url,
-            "vectorPdf": img_data_url 
-        }]
-
+        results = [{"previewPng": img_data_url, "rawPng": img_data_url, "vectorPdf": img_data_url}]
         return JSONResponse({"results": results})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
 
-
-# ==========================================
-# 4. सर्वर स्टार्ट करने का फंक्शन (सबसे आखिर में)
-# ==========================================
 def start_server():
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("sam_server:app", host="0.0.0.0", port=port)
