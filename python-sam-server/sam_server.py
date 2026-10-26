@@ -1,13 +1,24 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 import io, base64
 from PIL import Image
 import cv2
 import numpy as np
 from rembg import remove
 import uvicorn
+import os
 
 app = FastAPI(title="SAM Layer Splitter")
+
+# CORS सेटिंग्स (फ्रंटएंड से कनेक्ट होने के लिए)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], 
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.post("/split-layers")
 async def split_layers(file: UploadFile = File(...)):
@@ -41,8 +52,6 @@ async def split_layers(file: UploadFile = File(...)):
         return JSONResponse({"success": True, "total_layers": len(layers_base64), "layers": layers_base64})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
-
-import os
 
 if __name__ == "__main__":
     # Render द्वारा दिया गया पोर्ट लें, नहीं तो 10000 इस्तेमाल करें
