@@ -1,1 +1,552 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>डिज़ाइन एडिटर</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #0b1220; color: #e5e7eb; font-family: Arial, 'Noto Sans Devanagari', sans-serif; }
+  header { padding: 12px 16px; background: #0f172a; border-bottom: 1px solid #1e293b; color: #fbbf24; font-weight: bold; }
+  main { max-width: 640px; margin: 0 auto; padding: 12px; }
+  #stageWrap { background: #111827; border: 1px solid #1e293b; border-radius: 10px; padding: 8px; }
+  canvas { width: 100%; height: auto; display: block; touch-action: none; border-radius: 6px;
+           background-image: linear-gradient(45deg,#1f2937 25%,transparent 25%),linear-gradient(-45deg,#1f2937 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1f2937 75%),linear-gradient(-45deg,transparent 75%,#1f2937 75%);
+           background-size: 20px 20px; background-position: 0 0,0 10px,10px -10px,-10px 0; }
+  .panel { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 12px; margin-top: 12px; }
+  .panel h3 { margin: 0 0 8px; font-size: 15px; color: #fbbf24; }
+  label { display: block; font-size: 13px; margin: 8px 0 4px; color: #cbd5e1; }
+  input[type=text], select { width: 100%; padding: 10px; background: #0b1220; color: #fff; border: 1px solid #334155; border-radius: 8px; font-size: 16px; }
+  input[type=range] { width: 100%; }
+  input[type=color] { width: 100%; height: 40px; border: none; border-radius: 8px; padding: 0; background: none; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .chips button { padding: 4px; min-width: 46px; min-height: 46px; display: flex; align-items: center; justify-content: center; }
+  .chips button img { max-width: 40px; max-height: 40px; display: block; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .btns button { flex: 1 1 30%; }
+  button { padding: 10px 12px; border: none; border-radius: 8px; background: #334155; color: #fff; font-size: 14px; cursor: pointer; }
+  button.on { background: #fbbf24; color: #000; outline: 2px solid #fbbf24; }
+  button.primary { background: #fbbf24; color: #000; font-weight: bold; }
+  button.green { background: #10b981; }
+  button.red { background: #ef4444; }
+  button.purple { background: #8b5cf6; }
+  button.full { width: 100%; margin-top: 8px; padding: 12px; }
+  button:disabled { opacity: .5; }
+  .check { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 14px; }
+  .check input { width: 20px; height: 20px; }
+  #msg { margin-top: 10px; padding: 10px; border-radius: 8px; background: #0b1220; font-size: 14px; display: none; word-break: break-all; }
+  .hint { font-size: 12px; color: #94a3b8; margin: 4px 0 0; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<header>🎨 डिज़ाइन एडिटर — पार्ट्स हिलाएँ, नाम बदलें, नया डिज़ाइन बनाएँ</header>
+<main>
+  <div id="stageWrap"><canvas id="c"></canvas></div>
+  <p class="hint">किसी भी पार्ट या टेक्स्ट को उंगली से पकड़कर खींचें। पार्ट छूने पर चुना जाएगा।</p>
+
+  <div class="panel" id="itemsPanel">
+    <h3>🧩 पार्ट्स (अलग-अलग हिस्से)</h3>
+    <div class="chips" id="itemChips"></div>
+    <div id="itemCtl" class="hidden">
+      <label>चुने पार्ट का साइज़: <span id="vISize"></span>%</label>
+      <input type="range" id="iSize" min="2" max="150" step="1" />
+      <label>घुमाव: <span id="vIAngle"></span>°</label>
+      <input type="range" id="iAngle" min="-180" max="180" step="1" />
+      <div class="btns">
+        <button id="iFlip">↔️ पलटें</button>
+        <button id="iFront">⬆️ सबसे ऊपर</button>
+        <button id="iBack">⬇️ सबसे नीचे</button>
+        <button id="iDup" class="green">📄 कॉपी</button>
+        <button id="iDel" class="red">🗑️ हटाएँ</button>
+      </div>
+    </div>
+    <div class="btns" style="margin-top:12px;">
+      <button id="lAuto" class="purple">🎲 अपने आप नया लेआउट</button>
+      <button id="lOrig">↩️ पहले जैसा</button>
+    </div>
+    <p class="hint">"नया लेआउट" बार-बार दबाने पर पार्ट्स अलग-अलग तरीके से सजते हैं (ग्रिड, गोल, बिखरा हुआ, लाइन)।</p>
+  </div>
+
+  <div class="panel">
+    <h3>🖼️ बैकग्राउंड</h3>
+    <label>थीम चुनें या खुद लिखें</label>
+    <select id="bgPreset">
+      <option value="">— अपना प्रॉम्प्ट —</option>
+      <option value="royal red and gold floral mandala background, indian wedding">शादी (लाल-सुनहरा)</option>
+      <option value="elegant ivory paisley pattern with gold border background">शादी (आइवरी)</option>
+      <option value="clean modern geometric corporate background">बिज़नेस कार्ड (साफ)</option>
+      <option value="dark navy gradient with thin gold lines, premium background">प्रीमियम गहरा</option>
+      <option value="vibrant festive celebration background with light rays">त्योहार / बैनर</option>
+      <option value="bold red and yellow sale promotion abstract background">सेल / ऑफर</option>
+      <option value="soft pastel watercolor floral background">हल्का फूलों वाला</option>
+      <option value="elegant white marble texture background">सफेद संगमरमर</option>
+    </select>
+    <input type="text" id="bgPrompt" placeholder="जैसे: gold luxury background" style="margin-top:8px;" />
+    <button class="purple full" id="bBg">🤖 नया AI बैकग्राउंड बनाएँ</button>
+    <div class="check"><input type="checkbox" id="useBgColor" /><label for="useBgColor" style="margin:0;">AI बैकग्राउंड की जगह सादा रंग</label></div>
+    <input type="color" id="bgColor" value="#ffffff" />
+  </div>
+
+  <div class="panel">
+    <h3>✍️ टेक्स्ट</h3>
+    <div class="chips" id="chips"></div>
+    <label>नाम / टेक्स्ट</label>
+    <input type="text" id="tText" />
+    <div class="row">
+      <div><label>फॉन्ट</label>
+        <select id="tFont">
+          <option value="Arial, sans-serif">Arial</option>
+          <option value="'Impact', sans-serif">Impact (मोटा)</option>
+          <option value="'Times New Roman', serif">Times</option>
+          <option value="'Georgia', serif">Georgia</option>
+          <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
+          <option value="'Verdana', sans-serif">Verdana</option>
+          <option value="'Courier New', monospace">Courier</option>
+          <option value="'Comic Sans MS', cursive">Comic</option>
+        </select>
+      </div>
+      <div><label>रंग</label><input type="color" id="tColor" /></div>
+    </div>
+    <label>साइज़: <span id="vSize"></span></label>
+    <input type="range" id="tSize" min="1" max="40" step="0.5" />
+    <label>घुमाव (कोण): <span id="vAngle"></span>°</label>
+    <input type="range" id="tAngle" min="-180" max="180" step="1" />
+    <div style="display:flex; gap:8px; margin-top:8px;">
+      <button id="bBold" style="flex:1; font-weight:bold;">B</button>
+      <button id="bItalic" style="flex:1; font-style:italic;">I</button>
+      <button id="bAdd" class="green" style="flex:2;">➕ नया टेक्स्ट</button>
+      <button id="bDel" class="red" style="flex:1;">🗑️</button>
+    </div>
+    <h3 style="margin-top:14px;">✨ 3D / आउटलाइन</h3>
+    <div class="check"><input type="checkbox" id="t3d" /><label for="t3d" style="margin:0;">3D इफेक्ट लगाएँ</label></div>
+    <div class="row">
+      <div><label>3D गहराई: <span id="vDepth"></span></label><input type="range" id="tDepth" min="0" max="60" step="1" /></div>
+      <div><label>3D का रंग</label><input type="color" id="tExtrude" /></div>
+    </div>
+    <div class="check"><input type="checkbox" id="tOutline" /><label for="tOutline" style="margin:0;">आउटलाइन (किनारी)</label></div>
+    <label>आउटलाइन का रंग</label><input type="color" id="tOutlineColor" />
+  </div>
+
+  <div class="panel">
+    <button class="primary full" id="bDownload">⬇️ डाउनलोड PNG (300 DPI, पूरा साइज़)</button>
+    <button class="full" id="bShare">🔗 मेरे बदलाव का नया लिंक बनाएँ (भेजने के लिए)</button>
+    <div id="msg"></div>
+  </div>
+</main>
+
+<script>
+(function () {
+  var id = decodeURIComponent(location.pathname.split('/').pop() || '');
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var tmp = document.createElement('canvas'); tmp.width = 1; tmp.height = 1;
+  var tctx = tmp.getContext('2d', { willReadFrequently: true });
+  var P = null, bgImg = null, bgUrl = null;
+  var items = [], texts = [];
+  var sel = { type: 'i', idx: -1 }, tIdx = 0, layoutStep = 0;
+  var useBgColor = false, bgColor = '#ffffff';
+  var $ = function (i) { return document.getElementById(i); };
+
+  function msg(content, ok) {
+    var m = $('msg'); m.style.display = 'block'; m.style.color = ok === false ? '#fca5a5' : '#e5e7eb';
+    m.textContent = '';
+    if (typeof content === 'string') m.textContent = content; else m.appendChild(content);
+  }
+  function loadImg(src) {
+    return new Promise(function (res, rej) {
+      var i = new Image();
+      i.onload = function () { res(i); };
+      i.onerror = function () { rej(new Error('इमेज नहीं मिली (शायद सर्वर restart में मिट गई)')); };
+      i.src = src;
+    });
+  }
+
+  function normText(t) {
+    t = t || {};
+    return {
+      text: t.text || '', x: isFinite(t.x) ? +t.x : 50, y: isFinite(t.y) ? +t.y : 20,
+      sizeFrac: isFinite(t.sizeFrac) ? +t.sizeFrac : 0.1, color: t.color || '#ffffff',
+      bold: !!t.bold, italic: !!t.italic, font: t.font || 'Arial, sans-serif',
+      angle: isFinite(t.angle) ? +t.angle : 0, effect3d: !!t.effect3d,
+      depth: isFinite(t.depth) ? +t.depth : 12, extrude: t.extrude || '#8a6d00',
+      outline: !!t.outline, outlineColor: t.outlineColor || '#000000'
+    };
+  }
+  function makeItem(o, img) {
+    var it = { url: o.url, img: img, cx: +o.cx, cy: +o.cy, wFrac: +o.wFrac, angle: +o.angle || 0, flip: !!o.flip };
+    it.orig = { cx: it.cx, cy: it.cy, wFrac: it.wFrac, angle: it.angle, flip: it.flip };
+    return it;
+  }
+  function itemH(it) { return it.wFrac * canvas.width * it.img.naturalHeight / it.img.naturalWidth; }
+
+  /* ---------- ड्रॉइंग ---------- */
+  function drawItem(it) {
+    var W = canvas.width, H = canvas.height, w = it.wFrac * W, h = itemH(it);
+    ctx.save();
+    ctx.translate(it.cx / 100 * W, it.cy / 100 * H);
+    ctx.rotate(it.angle * Math.PI / 180);
+    if (it.flip) ctx.scale(-1, 1);
+    ctx.drawImage(it.img, -w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+  function drawText(t) {
+    if (!t.text) return;
+    var W = canvas.width, H = canvas.height, fs = Math.max(4, t.sizeFrac * W);
+    ctx.save();
+    ctx.translate(t.x / 100 * W, t.y / 100 * H);
+    ctx.rotate(t.angle * Math.PI / 180);
+    ctx.font = (t.italic ? 'italic ' : '') + (t.bold ? 'bold ' : '') + fs + 'px ' + t.font;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (t.effect3d) {
+      var depth = Math.round(fs * t.depth / 100);
+      ctx.fillStyle = t.extrude;
+      for (var i = depth; i >= 1; i--) ctx.fillText(t.text, i * 0.7, i * 0.7);
+    }
+    if (t.outline) {
+      ctx.lineWidth = fs * 0.08; ctx.lineJoin = 'round'; ctx.strokeStyle = t.outlineColor;
+      ctx.strokeText(t.text, 0, 0);
+    }
+    ctx.fillStyle = t.color;
+    ctx.fillText(t.text, 0, 0);
+    ctx.restore();
+  }
+  function textBox(t) {
+    var fs = Math.max(4, t.sizeFrac * canvas.width);
+    ctx.save();
+    ctx.font = (t.italic ? 'italic ' : '') + (t.bold ? 'bold ' : '') + fs + 'px ' + t.font;
+    var w = ctx.measureText(t.text || ' ').width;
+    ctx.restore();
+    return { w: w + fs * 0.4, h: fs * 1.3 };
+  }
+  function dashBox(cx, cy, angle, w, h) {
+    var W = canvas.width;
+    ctx.save();
+    ctx.translate(cx, cy); ctx.rotate(angle * Math.PI / 180);
+    ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = Math.max(2, W / 400); ctx.setLineDash([W / 100, W / 150]);
+    ctx.strokeRect(-w / 2, -h / 2, w, h);
+    ctx.restore();
+  }
+  function draw(forExport) {
+    var W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    if (useBgColor || !bgImg) { ctx.fillStyle = bgColor; ctx.fillRect(0, 0, W, H); }
+    else ctx.drawImage(bgImg, 0, 0, W, H);
+    items.forEach(drawItem);
+    texts.forEach(drawText);
+    if (forExport) return;
+    if (sel.type === 'i' && items[sel.idx]) {
+      var it = items[sel.idx];
+      dashBox(it.cx / 100 * W, it.cy / 100 * H, it.angle, it.wFrac * W, itemH(it));
+    } else if (sel.type === 't' && texts[tIdx] && texts[tIdx].text) {
+      var t = texts[tIdx], b = textBox(t);
+      dashBox(t.x / 100 * W, t.y / 100 * H, t.angle, b.w, b.h);
+    }
+  }
+
+  /* ---------- UI सिंक ---------- */
+  function syncItems() {
+    var chips = $('itemChips'); chips.innerHTML = '';
+    items.forEach(function (it, i) {
+      var b = document.createElement('button');
+      var im = document.createElement('img'); im.src = it.url; im.alt = 'पार्ट ' + (i + 1);
+      b.appendChild(im);
+      if (sel.type === 'i' && i === sel.idx) b.className = 'on';
+      b.onclick = function () { sel = { type: 'i', idx: i }; syncItems(); draw(); };
+      chips.appendChild(b);
+    });
+    var it = items[sel.idx];
+    var show = sel.type === 'i' && it;
+    $('itemCtl').className = show ? '' : 'hidden';
+    if (show) {
+      $('iSize').value = Math.round(it.wFrac * 100); $('vISize').textContent = Math.round(it.wFrac * 100);
+      $('iAngle').value = Math.round(it.angle); $('vIAngle').textContent = Math.round(it.angle);
+    }
+    if (!items.length) $('itemsPanel').style.display = 'none';
+  }
+  function syncText() {
+    var chips = $('chips'); chips.innerHTML = '';
+    texts.forEach(function (tt, i) {
+      var b = document.createElement('button');
+      b.textContent = (tt.text || '(खाली)').slice(0, 14);
+      b.style.minHeight = '0';
+      if (sel.type === 't' && i === tIdx) b.className = 'on';
+      b.onclick = function () { sel = { type: 't', idx: i }; tIdx = i; syncText(); syncItems(); draw(); };
+      chips.appendChild(b);
+    });
+    var t = texts[tIdx]; if (!t) return;
+    $('tText').value = t.text; $('tFont').value = t.font; $('tColor').value = t.color;
+    $('tSize').value = (t.sizeFrac * 100).toFixed(1); $('vSize').textContent = (t.sizeFrac * 100).toFixed(1);
+    $('tAngle').value = Math.round(t.angle); $('vAngle').textContent = Math.round(t.angle);
+    $('bBold').className = t.bold ? 'on' : ''; $('bItalic').className = t.italic ? 'on' : '';
+    $('t3d').checked = t.effect3d; $('tDepth').value = t.depth; $('vDepth').textContent = Math.round(t.depth);
+    $('tExtrude').value = t.extrude; $('tOutline').checked = t.outline; $('tOutlineColor').value = t.outlineColor;
+    $('useBgColor').checked = useBgColor; $('bgColor').value = bgColor;
+  }
+  function curT() { return texts[tIdx]; }
+  function curI() { return sel.type === 'i' ? items[sel.idx] : null; }
+
+  /* ---------- अपने आप नया लेआउट ---------- */
+  function applyLayout(kind) {
+    var n = items.length; if (!n) return;
+    var W = canvas.width, H = canvas.height, ar = H / W;
+    items.forEach(function (it) {
+      var o = it.orig;
+      var asp = it.img.naturalHeight / it.img.naturalWidth;
+      var w0 = o.wFrac;
+      if (kind === 'orig') { it.cx = o.cx; it.cy = o.cy; it.wFrac = o.wFrac; it.angle = o.angle; it.flip = o.flip; return; }
+      it._asp = asp; it._w0 = w0;
+    });
+    if (kind === 'orig') return;
+    var i;
+    if (kind === 'grid') {
+      var cols = Math.ceil(Math.sqrt(n * W / H)), rows = Math.ceil(n / cols);
+      for (i = 0; i < n; i++) {
+        var it = items[i], c = i % cols, r = Math.floor(i / cols);
+        var cellW = 1 / cols, cellH = ar / rows;
+        var fit = Math.min(cellW * 0.82 / it._w0, cellH * 0.82 / (it._w0 * it._asp));
+        it.wFrac = Math.min(1.2, it._w0 * fit);
+        it.cx = (c + 0.5) / cols * 100; it.cy = (r + 0.5) / rows * 100; it.angle = 0; it.flip = false;
+      }
+    } else if (kind === 'circle') {
+      for (i = 0; i < n; i++) {
+        var a = (i / n) * Math.PI * 2 - Math.PI / 2, it2 = items[i];
+        it2.wFrac = Math.min(0.5, it2._w0 * 0.75);
+        it2.cx = 50 + Math.cos(a) * 32; it2.cy = 50 + Math.sin(a) * 32 * (W / H);
+        it2.angle = (a * 180 / Math.PI + 90) * 0.35; it2.flip = false;
+      }
+    } else if (kind === 'row') {
+      for (i = 0; i < n; i++) {
+        var it3 = items[i];
+        var wSlot = 1 / n;
+        var f = Math.min(wSlot * 0.9 / it3._w0, 0.5 / (it3._w0 * it3._asp) * ar);
+        it3.wFrac = Math.min(1, it3._w0 * f);
+        it3.cx = (i + 0.5) / n * 100; it3.cy = 50; it3.angle = 0; it3.flip = false;
+      }
+    } else { // बिखरा हुआ
+      for (i = 0; i < n; i++) {
+        var it4 = items[i];
+        it4.wFrac = Math.min(0.6, it4._w0 * (0.5 + Math.random() * 0.7));
+        it4.cx = 12 + Math.random() * 76; it4.cy = 12 + Math.random() * 76;
+        it4.angle = (Math.random() - 0.5) * 50; it4.flip = Math.random() < 0.2;
+      }
+    }
+  }
+  var LAYOUTS = ['grid', 'circle', 'row', 'scatter'];
+  var LABELS = { grid: 'ग्रिड', circle: 'गोल', row: 'एक लाइन', scatter: 'बिखरा हुआ' };
+
+  /* ---------- खींचकर हिलाना ---------- */
+  function pt(e) {
+    var r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * canvas.width / r.width, y: (e.clientY - r.top) * canvas.height / r.height };
+  }
+  function hitText(p) {
+    for (var i = texts.length - 1; i >= 0; i--) {
+      var t = texts[i]; if (!t.text) continue;
+      var b = textBox(t), cx = t.x / 100 * canvas.width, cy = t.y / 100 * canvas.height;
+      var a = -t.angle * Math.PI / 180, dx = p.x - cx, dy = p.y - cy;
+      var lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
+      if (Math.abs(lx) <= b.w / 2 && Math.abs(ly) <= b.h / 2) return i;
+    }
+    return -1;
+  }
+  function hitItem(p) {
+    for (var i = items.length - 1; i >= 0; i--) {
+      var it = items[i], W = canvas.width, H = canvas.height, w = it.wFrac * W, h = itemH(it);
+      var a = -it.angle * Math.PI / 180, dx = p.x - it.cx / 100 * W, dy = p.y - it.cy / 100 * H;
+      var lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
+      if (it.flip) lx = -lx;
+      if (Math.abs(lx) > w / 2 || Math.abs(ly) > h / 2) continue;
+      // पारदर्शी हिस्से को छोड़ दो (पीछे वाला पार्ट चुन सकें)
+      try {
+        var u = Math.floor((lx + w / 2) / w * it.img.naturalWidth), v = Math.floor((ly + h / 2) / h * it.img.naturalHeight);
+        tctx.clearRect(0, 0, 1, 1);
+        tctx.drawImage(it.img, Math.max(0, u), Math.max(0, v), 1, 1, 0, 0, 1, 1);
+        if (tctx.getImageData(0, 0, 1, 1).data[3] > 20) return i;
+      } catch (e) { return i; }
+    }
+    return -1;
+  }
+
+  function bind() {
+    var dragging = null, off = { x: 0, y: 0 };
+    canvas.addEventListener('pointerdown', function (e) {
+      var p = pt(e), ti = hitText(p);
+      if (ti >= 0) {
+        sel = { type: 't', idx: ti }; tIdx = ti; dragging = 't';
+        off.x = p.x - texts[ti].x / 100 * canvas.width; off.y = p.y - texts[ti].y / 100 * canvas.height;
+      } else {
+        var ii = hitItem(p);
+        if (ii < 0) return;
+        sel = { type: 'i', idx: ii }; dragging = 'i';
+        off.x = p.x - items[ii].cx / 100 * canvas.width; off.y = p.y - items[ii].cy / 100 * canvas.height;
+      }
+      canvas.setPointerCapture(e.pointerId); syncText(); syncItems(); draw(); e.preventDefault();
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var p = pt(e);
+      var nx = Math.max(-20, Math.min(120, (p.x - off.x) / canvas.width * 100));
+      var ny = Math.max(-20, Math.min(120, (p.y - off.y) / canvas.height * 100));
+      if (dragging === 't') { texts[tIdx].x = nx; texts[tIdx].y = ny; }
+      else if (items[sel.idx]) { items[sel.idx].cx = nx; items[sel.idx].cy = ny; }
+      draw();
+    });
+    function stop() { dragging = null; }
+    canvas.addEventListener('pointerup', stop);
+    canvas.addEventListener('pointercancel', stop);
+
+    // पार्ट कंट्रोल
+    $('iSize').oninput = function () { var it = curI(); if (!it) return; it.wFrac = this.value / 100; $('vISize').textContent = this.value; draw(); };
+    $('iAngle').oninput = function () { var it = curI(); if (!it) return; it.angle = +this.value; $('vIAngle').textContent = this.value; draw(); };
+    $('iFlip').onclick = function () { var it = curI(); if (!it) return; it.flip = !it.flip; draw(); };
+    $('iFront').onclick = function () { var it = curI(); if (!it) return; items.splice(sel.idx, 1); items.push(it); sel.idx = items.length - 1; syncItems(); draw(); };
+    $('iBack').onclick = function () { var it = curI(); if (!it) return; items.splice(sel.idx, 1); items.unshift(it); sel.idx = 0; syncItems(); draw(); };
+    $('iDup').onclick = function () {
+      var it = curI(); if (!it) return;
+      var c = makeItem({ url: it.url, cx: it.cx + 4, cy: it.cy + 4, wFrac: it.wFrac, angle: it.angle, flip: it.flip }, it.img);
+      items.push(c); sel.idx = items.length - 1; syncItems(); draw();
+    };
+    $('iDel').onclick = function () { var it = curI(); if (!it) return; items.splice(sel.idx, 1); sel.idx = Math.min(sel.idx, items.length - 1); syncItems(); draw(); };
+    $('lAuto').onclick = function () {
+      var k = LAYOUTS[layoutStep % LAYOUTS.length]; layoutStep++;
+      applyLayout(k); syncItems(); draw(); msg('🎲 लेआउट: ' + LABELS[k] + ' (फिर दबाएँ तो अगला)');
+    };
+    $('lOrig').onclick = function () { applyLayout('orig'); syncItems(); draw(); };
+
+    // बैकग्राउंड
+    $('bgPreset').onchange = function () { if (this.value) $('bgPrompt').value = this.value; };
+    $('bBg').onclick = newBackground;
+    $('useBgColor').onchange = function () { useBgColor = this.checked; draw(); };
+    $('bgColor').oninput = function () { bgColor = this.value; useBgColor = true; $('useBgColor').checked = true; draw(); };
+
+    // टेक्स्ट
+    $('tText').oninput = function () { curT().text = this.value; draw(); var c = $('chips').children[tIdx]; if (c) c.textContent = (this.value || '(खाली)').slice(0, 14); };
+    $('tFont').onchange = function () { curT().font = this.value; draw(); };
+    $('tColor').oninput = function () { curT().color = this.value; draw(); };
+    $('tSize').oninput = function () { curT().sizeFrac = this.value / 100; $('vSize').textContent = this.value; draw(); };
+    $('tAngle').oninput = function () { curT().angle = +this.value; $('vAngle').textContent = this.value; draw(); };
+    $('bBold').onclick = function () { curT().bold = !curT().bold; syncText(); draw(); };
+    $('bItalic').onclick = function () { curT().italic = !curT().italic; syncText(); draw(); };
+    $('bAdd').onclick = function () { texts.push(normText({ text: 'नया टेक्स्ट', x: 50, y: 50, sizeFrac: 0.08 })); tIdx = texts.length - 1; sel = { type: 't', idx: tIdx }; syncText(); syncItems(); draw(); };
+    $('bDel').onclick = function () {
+      if (!texts.length) return;
+      texts.splice(tIdx, 1); if (!texts.length) texts.push(normText({ text: '' }));
+      tIdx = Math.max(0, Math.min(tIdx, texts.length - 1)); syncText(); draw();
+    };
+    $('t3d').onchange = function () { curT().effect3d = this.checked; draw(); };
+    $('tDepth').oninput = function () { curT().depth = +this.value; $('vDepth').textContent = this.value; draw(); };
+    $('tExtrude').oninput = function () { curT().extrude = this.value; draw(); };
+    $('tOutline').onchange = function () { curT().outline = this.checked; draw(); };
+    $('tOutlineColor').oninput = function () { curT().outlineColor = this.value; draw(); };
+
+    $('bDownload').onclick = download;
+    $('bShare').onclick = saveCopy;
+  }
+
+  /* ---------- AI बैकग्राउंड ---------- */
+  function nearestAspect() {
+    var r = canvas.width / canvas.height;
+    if (r > 2.3) return 'banner';
+    if (Math.abs(r - 1.75) < 0.12) return 'card';
+    if (Math.abs(r - 0.714) < 0.04) return 'wedding';
+    if (r > 1.25) return '3:2';
+    if (r > 0.85) return '1:1';
+    return '2:3';
+  }
+  async function newBackground() {
+    var prompt = ($('bgPrompt').value || '').trim();
+    if (!prompt) { msg('पहले थीम चुनें या प्रॉम्प्ट लिखें', false); return; }
+    var btn = $('bBg'); btn.disabled = true; btn.textContent = '⏳ बन रहा है (कुछ सेकंड)...';
+    try {
+      var r = await fetch('/api/background', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt: prompt, aspect: nearestAspect() }) });
+      var d = await r.json();
+      if (d.error) throw new Error(d.error);
+      bgImg = await loadImg(d.preview); bgUrl = d.preview;
+      useBgColor = false; $('useBgColor').checked = false; draw();
+      msg('✅ नया बैकग्राउंड लग गया। पसंद न आए तो फिर दबाएँ।');
+    } catch (e) { msg('❌ ' + e.message, false); }
+    btn.disabled = false; btn.textContent = '🤖 नया AI बैकग्राउंड बनाएँ';
+  }
+
+  /* ---------- डाउनलोड / नया लिंक ---------- */
+  function toBlob() { return new Promise(function (res) { canvas.toBlob(res, 'image/png'); }); }
+  async function download() {
+    try {
+      msg('फाइल बन रही है...');
+      draw(true);
+      var blob = await toBlob();
+      draw();
+      var url = null;
+      try {
+        var fd = new FormData(); fd.append('image', blob, 'design.png'); fd.append('dpi', '300');
+        var r = await fetch('/api/print-export', { method: 'POST', body: fd });
+        var d = await r.json();
+        if (d.url) url = d.url;
+      } catch (e) { /* सर्वर न मिले तो सीधे ब्राउज़र वाली फाइल */ }
+      var a = document.createElement('a');
+      a.href = url || URL.createObjectURL(blob);
+      a.download = 'design.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      msg(url ? '✅ डाउनलोड शुरू (300 DPI)' : '✅ डाउनलोड शुरू');
+    } catch (e) { msg('❌ ' + e.message, false); }
+  }
+  async function saveCopy() {
+    try {
+      msg('नया लिंक बन रहा है...');
+      var body = {
+        title: P.title, W: P.W, H: P.H, bg: bgUrl, cut: items.length ? null : P.cut, final: P.final,
+        items: items.map(function (it) { return { url: it.url, cx: it.cx, cy: it.cy, wFrac: it.wFrac, angle: it.angle, flip: it.flip }; }),
+        texts: texts.filter(function (t) { return t.text; }), useBgColor: useBgColor, bgColor: bgColor
+      };
+      var r = await fetch('/api/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      var d = await r.json();
+      if (d.error) throw new Error(d.error);
+      var link = location.origin + d.url;
+      var wrap = document.createElement('div');
+      wrap.appendChild(document.createTextNode('✅ बदलाव का लिंक: '));
+      var inp = document.createElement('input'); inp.type = 'text'; inp.readOnly = true; inp.value = link; inp.style.marginTop = '6px';
+      inp.onfocus = function () { inp.select(); };
+      wrap.appendChild(inp);
+      msg(wrap);
+      if (navigator.share) { try { await navigator.share({ title: P.title, url: link }); } catch (e) {} }
+      else if (navigator.clipboard) { try { await navigator.clipboard.writeText(link); } catch (e) {} }
+    } catch (e) { msg('❌ ' + e.message, false); }
+  }
+
+  /* ---------- शुरुआत ---------- */
+  async function init() {
+    try {
+      var r = await fetch('/api/project/' + encodeURIComponent(id));
+      var d = await r.json();
+      if (d.error) throw new Error(d.error);
+      P = d;
+      canvas.width = P.W; canvas.height = P.H;
+
+      var list = (P.items && P.items.length) ? P.items : (P.cut ? [{ url: P.cut, cx: 50, cy: 50, wFrac: 1, angle: 0, flip: false }] : []);
+      var loads = list.map(function (o) { return loadImg(o.url); });
+      if (P.bg) loads.push(loadImg(P.bg));
+      var imgs = await Promise.all(loads);
+      items = list.map(function (o, i) { return makeItem(o, imgs[i]); });
+      if (P.bg) { bgImg = imgs[list.length]; bgUrl = P.bg; }
+
+      texts = (P.texts || []).map(normText);
+      if (!texts.length) texts.push(normText({ text: '', x: 50, y: 15, sizeFrac: 0.1 }));
+      useBgColor = !!P.useBgColor || !P.bg; bgColor = P.bgColor || '#ffffff';
+      // सिर्फ एक कटआउट-लेयर हो तो उसे "पार्ट" की तरह दिखाने की ज़रूरत नहीं (पूरा कैनवस-साइज़ है)
+      sel = { type: items.length > 1 ? 'i' : 't', idx: -1 };
+      bind(); syncItems(); syncText(); draw();
+    } catch (e) {
+      var m = document.querySelector('main'); m.innerHTML = '';
+      var p = document.createElement('p'); p.style.cssText = 'padding:20px;color:#fca5a5;';
+      p.textContent = '❌ ' + e.message; m.appendChild(p);
+    }
+  }
+  init();
+})();
+</script>
+</body>
+</html>
 
