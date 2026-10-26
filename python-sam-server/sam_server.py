@@ -22,6 +22,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ==========================================
+# 1. आपका पुराना रास्ता (EndPoint)
+# ==========================================
 @app.post("/split-layers")
 async def split_layers(file: UploadFile = File(...)):
     try:
@@ -55,13 +58,10 @@ async def split_layers(file: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-# सर्वर स्टार्ट करने का फंक्शन
-def start_server():
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run("sam_server:app", host="0.0.0.0", port=port)
-    # ... आपका पुराना कोड ऊपर है ...
 
-# 🔥 स्क्रिप्ट के हिसाब से नया रास्ता (EndPoint)
+# ==========================================
+# 2. स्क्रिप्ट के हिसाब से नया रास्ता (EndPoint)
+# ==========================================
 @app.post("/api/split-and-trace")
 async def split_and_trace_script_format(file: UploadFile = File(...)):
     try:
@@ -103,6 +103,14 @@ async def split_and_trace_script_format(file: UploadFile = File(...)):
         return JSONResponse({"results": results})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ==========================================
+# 3. सर्वर स्टार्ट करने का फंक्शन (सबसे आखिर में)
+# ==========================================
+def start_server():
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("sam_server:app", host="0.0.0.0", port=port)
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
