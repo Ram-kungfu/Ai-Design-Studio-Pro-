@@ -59,6 +59,50 @@ async def split_layers(file: UploadFile = File(...)):
 def start_server():
     port = int(os.environ.get("PORT", 10000))
     uvicorn.run("sam_server:app", host="0.0.0.0", port=port)
+    # ... आपका पुराना कोड ऊपर है ...
+
+# 🔥 स्क्रिप्ट के हिसाब से नया रास्ता (EndPoint)
+@app.post("/api/split-and-trace")
+async def split_and_trace_script_format(file: UploadFile = File(...)):
+    try:
+        contents = await file.read()
+        input_image = Image.open(io.BytesIO(contents)).convert("RGBA")
+        cutout = remove(input_image)
+        img_np = np.array(cutout)
+        alpha_channel = img_np[:, :, 3]
+        _, mask = cv2.threshold(alpha_channel, 10, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        results = []
+        layer_number = 1
+        
+        for i, cnt in enumerate(contours):
+            if cv2.contourArea(cnt) < 500: continue
+                
+            layer = np.zeros_like(img_np)
+            cv2.drawContours(layer, [cnt], -1, (255, 255, 255, 255), thickness=cv2.FILLED)
+            result_layer = cv2.bitwise_and(img_np, layer)
+            
+            final_img = Image.fromarray(result_layer)
+            buffered = io.BytesIO()
+            final_img.save(buffered, format="PNG")
+            
+            # Base64 इमेज बनाएँ
+            img_b64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
+            img_data_url = f"data:image/png;base64,{img_b64}"
+            
+            # स्क्रिप्ट को जो फॉर्मेट चाहिए, वही भेजें
+            results.append({
+                "layerNumber": layer_number,
+                "previewPng": img_data_url,
+                "rawPng": img_data_url,
+                "vectorPdf": img_data_url  # अभी के लिए पीएनजी ही पीडीएफ की जगह भेज रहे हैं
+            })
+            layer_number += 1
+
+        return JSONResponse({"results": results})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
