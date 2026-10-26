@@ -8,10 +8,12 @@ import numpy as np
 from rembg import remove
 import uvicorn
 import os
+import multiprocessing
 
+# FastAPI ऐप बनाएँ
 app = FastAPI(title="SAM Layer Splitter")
 
-# CORS सेटिंग्स (फ्रंटएंड से कनेक्ट होने के लिए)
+# CORS सेटिंग्स (फ्रंटएंड से कनेक्ट होने के लिए - यह सबसे ज़रूरी है)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -53,7 +55,11 @@ async def split_layers(file: UploadFile = File(...)):
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-if __name__ == "__main__":
-    # Render द्वारा दिया गया पोर्ट लें, नहीं तो 10000 इस्तेमाल करें
+# सर्वर स्टार्ट करने का फंक्शन
+def start_server():
     port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run("sam_server:app", host="0.0.0.0", port=port)
+
+if __name__ == "__main__":
+    multiprocessing.freeze_support()
+    start_server()
