@@ -1,4 +1,6 @@
 // 🔥 नया फंक्शन (बिना SAM के - फ्री तरीका)
+const SAM_BACKEND_URL = "https://sam-server-new.onrender.com";
+
 async function runDirectVector() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
   clearGrid(); setStatus('सीधा कट + वेक्टर बन रहा है...'); toggleButtons(true);
@@ -8,6 +10,7 @@ async function runDirectVector() {
   try {
     fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
     const r = await fetch('/api/direct-vector', { method: 'POST', body: fd });
+    
     const data = await r.json();
     if (data.error) throw new Error(data.error);
     
