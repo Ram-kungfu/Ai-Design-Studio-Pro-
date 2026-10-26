@@ -1,3 +1,4 @@
+
 // 🔥 नया फंक्शन (बिना SAM के - फ्री तरीका)
 const SAM_BACKEND_URL = "https://sam-server-new.onrender.com";
 
@@ -642,25 +643,41 @@ async function runAuto() {
 }
 
 // ==========================================
-// 2. SPLIT + TRACE (SAM + Vector)
+// 2. SPLIT + TRACE (SAM + Vector) - फाइनल सही कोड
 // ==========================================
 async function runSplitAndTrace() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
   clearGrid(); setStatus('SAM लेयर्स को अलग कर रहा है...'); toggleButtons(true);
-  const fd = new FormData(); fd.append('image', currentFile);
+  
+  const fd = new FormData(); 
+  fd.append('image', currentFile);
+  
   try {
-    const r = await fetch('/api/split-and-trace', { method: 'POST', body: fd });
+    // 🔥 सीधे Render वाले SAM सर्वर और सही एंडपॉइंट पर रिक्वेस्ट भेजने के लिए
+    const r = await fetch(`${SAM_BACKEND_URL}/split-layers`, { 
+      method: 'POST', 
+      body: fd 
+    });
+    
     const data = await r.json();
     if (data.error) throw new Error(data.error);
+    
     const grid = $('layerResults');
     data.results.forEach(res => {
-      // 🔥 अब बिना वॉटरमार्क वाली इमेज (res.rawPng) पास हो रही है (पहले दोनों बटन पर वॉटरमार्क वाली ही जाती थी)
+      // 🔥 बिना वॉटरमार्क वाली इमेज और वेक्टर PDF सही से पास हो रहे हैं
       const div = createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, `लेयर ${res.layerNumber}`, true);
       grid.appendChild(div);
     });
+    
     setStatus('✅ लेयर्स तैयार!', 'ok');
-  } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
+  } catch (e) { 
+    setStatus('❌ ' + e.message, 'err'); 
+  } finally { 
+    toggleButtons(false); 
+  }
 }
+
+
 
 // ==========================================
 // 3. VARIATIONS (5 डिज़ाइन)
