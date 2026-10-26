@@ -6,6 +6,7 @@ async function runDirectVector() {
   fd.append('image', currentFile);
   
   try {
+    fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
     const r = await fetch('/api/direct-vector', { method: 'POST', body: fd });
     const data = await r.json();
     if (data.error) throw new Error(data.error);
@@ -51,9 +52,18 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+// 🔥 कस्टम साइज़: px / इंच / सेमी - इंच और सेमी को 300 DPI पर पिक्सल में बदलता है (प्रिंट के लिए)
+function getCustomSize() {
+  const unit = $('customUnit') ? $('customUnit').value : 'px';
+  const f = unit === 'inch' ? 300 : (unit === 'cm' ? 300 / 2.54 : 1);
+  const w = parseFloat($('customW').value), h = parseFloat($('customH').value);
+  if (!(w > 0 && h > 0)) return { w: '', h: '' };
+  return { w: Math.round(w * f), h: Math.round(h * f) };
+}
+
 // 🔥 नाम की सारी सेटिंग्स (पोज़िशन, स्टाइल, रंग, साइज़) एक जगह से सर्वर को भेजने के लिए
 // (पहले Auto और Variations में textX/textY जा ही नहीं रहे थे, इसलिए नाम गलत जगह छपता था/छूट जाता था)
-function appendTextSettings(fd) {
+async function appendTextSettings(fd) {
   fd.append('name', $('nameInput').value);
   fd.append('textX', currentX);
   fd.append('textY', currentY);
@@ -65,6 +75,15 @@ function appendTextSettings(fd) {
   fd.append('isItalic', isItalic ? 'italic' : 'normal');
   fd.append('textStyle', $('textStyleSelect').value);
   if ($('fontFamilySelect')) fd.append('fontFamily', $('fontFamilySelect').value);
+  fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto'); // कटिंग का तरीका
+
+  // 🔥 नाम फोन के ब्राउज़र में ही PNG बनाकर भेजें - इससे हिंदी नाम, कर्व, रोटेशन सब हूबहू एडिटर जैसा छपता है
+  // (सर्वर पर हिंदी फॉन्ट नहीं होता, इसीलिए पहले नाम गायब हो जाता था)
+  const layer = await renderNameLayer();
+  if (layer) {
+    fd.append('nameImage', layer.blob, 'name.png');
+    fd.append('nameWFrac', layer.wFrac);
+  }
 }
 
 // --- Tab Switching ---
@@ -286,12 +305,12 @@ function clearText() {
   updateEditorText();
 }
 
-// 🔥 टेक्स्ट और स्टाइल अपडेट करने का सही लॉजिक (सभी स्टाइल्स के साथ)
-function updateEditorText() {
-  if (!draggableText) return;
-  
+// 🔥 नाम का SVG (एडिटर की लाइव प्रीव्यू और सर्वर को भेजी जाने वाली PNG - दोनों यही इस्तेमाल करते हैं)
+function buildTextSvgParts() {
   // 🔥 यहाँ 'RAHUL' हटा दिया गया है ताकि खाली होने पर कुछ न दिखे
   const rawName = $('nameInput').value; 
+  if (!rawName) return null;
+
   const name = escapeHtml(rawName); // SVG में डालने के लिए सुरक्षित नाम
   const style = $('textStyleSelect').value;
   const color = $('textColorPicker').value;
@@ -306,20 +325,11 @@ function updateEditorText() {
   const pxY = h / 2;
   const fontSize = currentFontSize * 4;
 
-  // अगर नाम खाली है, तो कुछ भी मत दिखाओ (सिर्फ बटन रहने दो)
-  if (!rawName) {
-    const oldSvg = draggableText.querySelector('svg');
-    if (oldSvg) oldSvg.remove();
-    setupHandles();
-    return;
-  }
-
   // बॉक्स का रोटेशन (अगर 'तिरछा' चुना है तो 45 डिग्री तिरछा करें)
   let boxRotation = Number(currentAngle) || 0;
   if (style === 'rotate') {
     boxRotation = boxRotation + 45; 
   }
-  draggableText.style.transform = `translate(-50%, -50%) rotate(${boxRotation}deg)`;
 
   let pathD = "";
   const startX = 30;
@@ -370,10 +380,69 @@ function updateEditorText() {
     `;
   }
 
+  return { svgContent, boxRotation, w, h };
+}
+
+// 🔥 नाम की पारदर्शी (transparent) PNG बनाना - फोन के ब्राउज़र में ही, ताकि हिंदी फॉन्ट सही आए
+// रोटेशन PNG के अंदर ही जुड़ा होता है; चारों तरफ खाली जगह (padding) रखी है ताकि कर्व/घुमाव कटे नहीं
+async function renderNameLayer() {
+  try {
+    const parts = buildTextSvgParts();
+    if (!parts) return null;
+
+    const PAD_X = 300, PAD_Y = 300, RATIO = 2;
+    const vbW = parts.w + 2 * PAD_X;
+    const vbH = parts.h + 2 * PAD_Y;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${vbW * RATIO}" height="${vbH * RATIO}" viewBox="${-PAD_X} ${-PAD_Y} ${vbW} ${vbH}">
+      <g transform="rotate(${parts.boxRotation} ${parts.w / 2} ${parts.h / 2})">${parts.svgContent}</g>
+    </svg>`;
+
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error('नाम की इमेज नहीं बन पाई'));
+      img.src = url;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = vbW * RATIO;
+    canvas.height = vbH * RATIO;
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    URL.revokeObjectURL(url);
+
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    const cw = editorContainer ? editorContainer.getBoundingClientRect().width : 0;
+    if (!blob || !cw) return null;
+
+    // wFrac = यह PNG एडिटर की चौड़ाई का कितना गुना है (सर्वर इसी अनुपात में फाइनल डिज़ाइन पर लगाता है)
+    return { blob, wFrac: vbW / cw };
+  } catch (e) {
+    console.log('नाम की PNG नहीं बनी, सर्वर वाला तरीका चलेगा:', e.message);
+    return null;
+  }
+}
+
+// 🔥 टेक्स्ट और स्टाइल अपडेट करने का सही लॉजिक (सभी स्टाइल्स के साथ)
+function updateEditorText() {
+  if (!draggableText) return;
+
+  const parts = buildTextSvgParts();
+
+  // अगर नाम खाली है, तो कुछ भी मत दिखाओ (सिर्फ बटन रहने दो)
+  if (!parts) {
+    const oldSvg = draggableText.querySelector('svg');
+    if (oldSvg) oldSvg.remove();
+    setupHandles();
+    return;
+  }
+
+  draggableText.style.transform = `translate(-50%, -50%) rotate(${parts.boxRotation}deg)`;
+
   const svgWrapper = document.createElement('div');
   svgWrapper.innerHTML = `
-    <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" style="pointer-events: none; overflow: visible;">
-      ${svgContent}
+    <svg width="${parts.w}" height="${parts.h}" xmlns="http://www.w3.org/2000/svg" style="pointer-events: none; overflow: visible;">
+      ${parts.svgContent}
     </svg>
   `;
 
@@ -394,7 +463,7 @@ document.getElementById('aspectSelect').addEventListener('change', function () {
   }
 });
 
-function applyManualText() {
+async function applyManualText() {
   const name = $('nameInput').value;
   if (!name) return alert('पहले नाम लिखें');
   if (!currentFile) return alert('पहले फोटो अपलोड करें');
@@ -417,6 +486,13 @@ function applyManualText() {
   // अगर फॉन्ट ड्रॉपडाउन है तो सर्वर पर भी भेजें
   if ($('fontFamilySelect')) {
     fd.append('fontFamily', $('fontFamilySelect').value);
+  }
+
+  // 🔥 नाम की PNG भी भेजें (हिंदी फॉन्ट के लिए)
+  const layer = await renderNameLayer();
+  if (layer) {
+    fd.append('nameImage', layer.blob, 'name.png');
+    fd.append('nameWFrac', layer.wFrac);
   }
 
   fetch('/api/manual-text', { method: 'POST', body: fd })
@@ -521,29 +597,40 @@ async function runAuto() {
   fd.append('image', currentFile);
   fd.append('prompt', $('promptInput').value || 'luxury gold background');
   fd.append('aspect', $('aspectSelect').value);
-  fd.append('customW', $('customW').value);
-  fd.append('customH', $('customH').value);
+  const cs = getCustomSize();
+  fd.append('customW', cs.w);
+  fd.append('customH', cs.h);
   fd.append('use3d', $('use3dText').checked ? 'true' : 'false');
 
   // 🔥 नाम + पोज़िशन (textX/textY) + स्टाइल सब एक साथ भेजें, ताकि नाम ठीक वहीं छपे जहाँ एडिटर में रखा है
-  appendTextSettings(fd);
+  await appendTextSettings(fd);
 
   try {
     const r = await fetch('/api/auto', { method: 'POST', body: fd });
     const data = await r.json();
     if (data.error) throw new Error(data.error);
 
-    if (data.steps.cutPreview) showThumb(data.steps.cutPreview, '✂️ कटआउट');
+    // 🔥 अब कटआउट का बिना-वॉटरमार्क (transparent) वर्ज़न भी डाउनलोड हो सकता है
+    if (data.steps.cutPreview) {
+      $('resultGrid').appendChild(createThumbCard(data.steps.cutPreview, data.steps.cutRaw, null, '✂️ कटआउट (transparent)', false));
+    }
     if (data.steps.finalPreview) {
       // 🔥 यहाँ नए कार्ड फंक्शन का इस्तेमाल हुआ है ताकि दोनों डाउनलोड बटन आ जाएँ
       const div = createThumbCard(data.steps.finalPreview, data.steps.finalRaw, null, '✅ Final', false);
       $('resultGrid').appendChild(div);
     }
 
+    // 🔥 अलग-अलग लेयर्स (सब एक ही साइज़ की PNG, एक के ऊपर एक ठीक बैठती हैं - Photoshop/Canva में सीधे डालिए)
+    if (data.steps.layerBg) $('resultGrid').appendChild(createThumbCard(data.steps.layerBg, data.steps.layerBg, null, '🧩 लेयर 1: बैकग्राउंड', false));
+    if (data.steps.layerCut) $('resultGrid').appendChild(createThumbCard(data.steps.layerCut, data.steps.layerCut, null, '🧩 लेयर 2: कटआउट (transparent)', false));
+    if (data.steps.layerText) $('resultGrid').appendChild(createThumbCard(data.steps.layerText, data.steps.layerText, null, '🧩 लेयर 3: नाम (transparent)', false));
+    if (data.steps.layerBg && data.steps.layerCut && data.steps.size) addShareCard(data.steps); // क्लाइंट को भेजने का लिंक
+
     $('downloadFull').href = data.steps.finalRaw;
     $('downloadPreview').href = data.steps.finalPreview;
     $('downloadBar').classList.remove('hidden');
-    setStatus('✅ तैयार!', 'ok');
+    const srcMap = { gemini: 'Gemini ✅', pollinations: 'Pollinations (Gemini फेल)', recraft: 'Recraft (Gemini फेल)', gradient: 'सादा ग्रेडिएंट (सब फेल)' };
+    setStatus('✅ तैयार! बैकग्राउंड: ' + (srcMap[data.steps.bgSource] || '-') + (($('nameInput').value) ? '' : ' | ⚠️ नाम खाली था'), 'ok');
   } catch (e) {
     setStatus('❌ ' + e.message, 'err');
   } finally {
@@ -582,11 +669,14 @@ async function runVariations() {
   const fd = new FormData();
   fd.append('image', currentFile);
   fd.append('aspect', $('aspectSelect').value);
-  fd.append('customW', $('customW').value);
-  fd.append('customH', $('customH').value);
+  const cs = getCustomSize();
+  fd.append('customW', cs.w);
+  fd.append('customH', cs.h);
+
+  fd.append('prompt', $('promptInput').value); // आपका थीम/प्रॉम्प्ट हर ऑटो-डिज़ाइन में जुड़ेगा
 
   // 🔥 पहले सिर्फ नाम जा रहा था; अब पोज़िशन, रंग, साइज़, स्टाइल सब जा रहा है ताकि नाम हर डिज़ाइन में सही छपे
-  appendTextSettings(fd);
+  await appendTextSettings(fd);
 
   try {
     const r = await fetch('/api/variations', { method: 'POST', body: fd });
@@ -640,7 +730,7 @@ async function runVector() {
 async function runCutout() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
   clearGrid(); setStatus('कटिंग हो रही है...'); toggleButtons(true);
-  const fd = new FormData(); fd.append('image', currentFile); fd.append('person', 'true');
+  const fd = new FormData(); fd.append('image', currentFile); fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
   try {
     const r = await fetch('/api/cutout', { method: 'POST', body: fd });
     const d = await r.json();
@@ -675,6 +765,186 @@ async function runUpscale() {
     $('resultGrid').appendChild(div);
     
     setStatus('✅ हो गया', 'ok');
+  } catch (e) {
+    setStatus('❌ ' + e.message, 'err');
+  } finally {
+    toggleButtons(false);
+  }
+}
+
+// ==========================================
+// 🔗 क्लाइंट को भेजने वाला एडिट-लिंक
+// ==========================================
+function addShareCard(steps) {
+  const div = document.createElement('div');
+  div.className = 'thumb';
+  div.innerHTML = `
+    <p style="margin-bottom:8px;">🔗 क्लाइंट/साथी को एडिट-लिंक भेजें<br><span style="font-size:11px;opacity:.8;">वह नाम बदल सकेगा, 3D इफेक्ट लगा सकेगा, टेक्स्ट जोड़ सकेगा और डाउनलोड कर सकेगा</span></p>
+    <button class="btn small primary" style="width:100%; background:#8b5cf6; color:#fff;">🔗 लिंक बनाएँ</button>
+    <div class="shareOut" style="margin-top:8px; word-break:break-all; font-size:12px;"></div>
+  `;
+  const btn = div.querySelector('button');
+  const out = div.querySelector('.shareOut');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'लिंक बन रहा है...';
+    try {
+      const link = await createShareLink(steps);
+      out.innerHTML = '';
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.readOnly = true; inp.value = link;
+      inp.style.cssText = 'width:100%; padding:8px; font-size:12px;';
+      inp.addEventListener('focus', () => inp.select());
+      out.appendChild(inp);
+      btn.textContent = '✅ लिंक तैयार (दोबारा भेजें)';
+      if (navigator.share) { try { await navigator.share({ title: 'AI Design Studio - डिज़ाइन', url: link }); } catch (e) {} }
+      else if (navigator.clipboard) { try { await navigator.clipboard.writeText(link); } catch (e) {} }
+    } catch (e) {
+      out.textContent = '❌ ' + e.message;
+      btn.textContent = '🔗 फिर कोशिश करें';
+    } finally { btn.disabled = false; }
+  });
+  $('resultGrid').appendChild(div);
+}
+
+async function createShareLink(steps) {
+  const cw = editorContainer ? editorContainer.getBoundingClientRect().width : 340;
+  const name = $('nameInput').value;
+  const texts = name ? [{
+    text: name,
+    x: currentX, y: currentY,
+    sizeFrac: (currentFontSize * 4) / (cw || 340), // फॉन्ट साइज़, canvas की चौड़ाई के अनुपात में
+    color: $('textColorPicker').value,
+    bold: isBold, italic: isItalic,
+    font: $('fontFamilySelect') ? $('fontFamilySelect').value : 'Arial, sans-serif',
+    angle: Number(currentAngle) || 0,
+    effect3d: false
+  }] : [];
+
+  const r = await fetch('/api/project', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      title: name || 'डिज़ाइन',
+      W: steps.size.W, H: steps.size.H,
+      bg: steps.layerBg, cut: steps.layerCut, final: steps.finalRaw,
+      texts
+    })
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error);
+  return location.origin + d.url;
+}
+
+// ==========================================
+// 🧩 पार्ट्स में बाँटना (फूल, पट्टी, अक्षर... सब अलग-अलग) + एडिटर में नया डिज़ाइन
+// ==========================================
+function getCanvasSize() {
+  const a = $('aspectSelect').value;
+  if (a === 'custom') {
+    const cs = getCustomSize();
+    if (cs.w && cs.h) return { W: Math.min(8000, cs.w), H: Math.min(8000, cs.h) };
+    return { W: 2000, H: 3000 };
+  }
+  const m = { '2:3': [2000, 3000], '1:1': [2400, 2400], '3:2': [3000, 2000], card: [1050, 600], wedding: [1500, 2100], banner: [3600, 1200] };
+  const v = m[a] || m['2:3'];
+  return { W: v[0], H: v[1] };
+}
+
+function buildTextsForProject() {
+  const cw = editorContainer ? editorContainer.getBoundingClientRect().width : 340;
+  const name = $('nameInput').value;
+  if (!name) return [];
+  return [{
+    text: name, x: currentX, y: currentY,
+    sizeFrac: (currentFontSize * 4) / (cw || 340),
+    color: $('textColorPicker').value, bold: isBold, italic: isItalic,
+    font: $('fontFamilySelect') ? $('fontFamilySelect').value : 'Arial, sans-serif',
+    angle: Number(currentAngle) || 0, effect3d: false
+  }];
+}
+
+async function createPartsProject(data) {
+  const { W, H } = getCanvasSize();
+  // कटी हुई पूरी डिज़ाइन को canvas पर उसी तरह बैठाना जैसे FULL AUTO में बैठती है
+  const s = Math.min(0.92 * W / data.cw, 0.74 * H / data.ch);
+  const x0 = (W - data.cw * s) / 2;
+  const y0 = Math.max(0, (H - data.ch * s) / 2 + 0.05 * H);
+  const items = data.parts.map(p => ({
+    url: p.url,
+    cx: (x0 + (p.x + p.w / 2) * s) / W * 100,
+    cy: (y0 + (p.y + p.h / 2) * s) / H * 100,
+    wFrac: (p.w * s) / W, angle: 0, flip: false
+  }));
+  const r = await fetch('/api/project', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: $('nameInput').value || 'पार्ट्स डिज़ाइन', W, H, items, texts: buildTextsForProject(), useBgColor: true, bgColor: '#ffffff' })
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error);
+  return location.origin + d.url;
+}
+
+function addPartsEditorCard(data) {
+  const div = document.createElement('div');
+  div.className = 'thumb';
+  div.innerHTML = `
+    <p style="margin-bottom:8px;">🎨 इन ${data.parts.length} पार्ट्स से नया डिज़ाइन बनाएँ<br><span style="font-size:11px;opacity:.8;">हर पार्ट को खींचें, छोटा-बड़ा करें, घुमाएँ, कॉपी करें। AI बैकग्राउंड और नाम भी वहीं लगेगा।</span></p>
+    <button class="btn small primary" style="width:100%; background:#8b5cf6; color:#fff;">🎨 एडिटर तैयार करें</button>
+    <div class="editorOut" style="margin-top:8px; word-break:break-all; font-size:12px;"></div>
+  `;
+  const btn = div.querySelector('button');
+  const out = div.querySelector('.editorOut');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true; btn.textContent = 'एडिटर बन रहा है...';
+    try {
+      const link = await createPartsProject(data);
+      out.innerHTML = '';
+      const a = document.createElement('a');
+      a.href = link; a.target = '_blank'; a.rel = 'noopener';
+      a.textContent = '👉 एडिटर खोलें';
+      a.className = 'btn small primary';
+      a.style.cssText = 'display:block; text-align:center; background:#10b981; color:#fff; padding:10px; border-radius:8px; margin-bottom:6px; text-decoration:none;';
+      out.appendChild(a);
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.readOnly = true; inp.value = link;
+      inp.style.cssText = 'width:100%; padding:8px; font-size:12px;';
+      inp.addEventListener('focus', () => inp.select());
+      out.appendChild(inp);
+      btn.textContent = '✅ तैयार';
+    } catch (e) {
+      out.textContent = '❌ ' + e.message;
+      btn.textContent = '🎨 फिर कोशिश करें';
+    } finally { btn.disabled = false; }
+  });
+  $('resultGrid').appendChild(div);
+}
+
+async function runSplitParts() {
+  if (!currentFile) return alert('फ़ोटो अपलोड करें');
+  clearGrid(); setStatus('कटिंग होकर पार्ट्स बन रहे हैं (1-2 मिनट लग सकते हैं)...'); toggleButtons(true);
+
+  const fd = new FormData();
+  fd.append('image', currentFile);
+  fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
+  fd.append('hd', ($('splitHd') && $('splitHd').checked) ? 'true' : 'false');
+  fd.append('gap', $('splitGap') ? $('splitGap').value : 'small');
+
+  try {
+    const r = await fetch('/api/split-parts', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+
+    if (!data.parts || data.parts.length === 0) {
+      setStatus('❌ कोई पार्ट नहीं मिला। कटिंग का तरीका बदलकर देखें।', 'err');
+      return;
+    }
+
+    addPartsEditorCard(data);
+    $('resultGrid').appendChild(createThumbCard(data.cutUrl, data.cutUrl, null, '✂️ पूरी कटी हुई डिज़ाइन', false));
+    data.parts.forEach((p, i) => {
+      $('resultGrid').appendChild(createThumbCard(p.url, p.url, null, `🧩 पार्ट ${i + 1}`, false));
+    });
+    setStatus(`✅ ${data.parts.length} पार्ट तैयार (${data.found} टुकड़े मिले)`, 'ok');
   } catch (e) {
     setStatus('❌ ' + e.message, 'err');
   } finally {
