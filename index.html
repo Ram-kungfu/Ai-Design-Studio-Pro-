@@ -48,7 +48,7 @@
     border-color: #fbbf24;
   }
 
-  /* 🔥 बटन (Handles) का डिज़ाइन */
+  /* 🔥 बटन (Handles) का डिज़ाइन */
   .handle {
     position: absolute;
     width: 20px;
@@ -99,6 +99,19 @@
 
   <section class="card">
     <h2>2️⃣ सेटिंग्स</h2>
+
+    <!-- 🔥 नया: कटिंग का तरीका (अब सिर्फ इंसान नहीं, कोई भी डिज़ाइन कट होगा) -->
+    <div style="margin-bottom: 12px; background: #0f172a; padding: 10px; border-radius: 8px; border: 1px dashed #475569;">
+      <label style="color:#fbbf24; font-weight:bold;">✂️ कटिंग का तरीका (ग्राहक की डिज़ाइन कैसी है?)</label>
+      <select id="cutModeSelect" style="width: 100%; padding: 10px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 8px; margin-top: 5px;">
+        <option value="auto">🤖 ऑटो (कोई भी डिज़ाइन / फोटो)</option>
+        <option value="graphic">🖼️ लोगो / ग्राफिक / कार्टून डिज़ाइन</option>
+        <option value="person">🧍 इंसान की फोटो</option>
+        <option value="local">🆓 फ्री - सफेद/सादे बैकग्राउंड वाली डिज़ाइन (बिना API)</option>
+        <option value="none">📎 पहले से कटी हुई PNG (कटिंग छोड़ें)</option>
+      </select>
+      <p class="hint" style="margin-top: 6px;">remove.bg चल न पाए तो अपने आप फ्री तरीका लग जाता है।</p>
+    </div>
     
     <div style="margin-bottom: 12px;">
       <label>नाम / टेक्स्ट:</label>
@@ -199,24 +212,33 @@
     </div>
 
     <div>
-      <label>साइज़:</label>
+      <label>किस चीज़ पर छपाई? (साइज़):</label>
       <select id="aspectSelect">
-        <option value="2:3">T-Shirt (2:3)</option>
-        <option value="1:1">Square (1:1)</option>
-        <option value="3:2">Poster (3:2)</option>
+        <option value="2:3">👕 T-Shirt (2:3)</option>
+        <option value="1:1">⬜ Square / स्टिकर / लोगो (1:1)</option>
+        <option value="3:2">🖼️ Poster (3:2)</option>
+        <option value="card">💼 विज़िटिंग कार्ड (3.5×2 इंच)</option>
+        <option value="wedding">💌 शादी कार्ड (5×7 इंच)</option>
+        <option value="banner">🎌 बैनर (3:1 चौड़ा)</option>
         <option value="custom">Custom Size (कस्टम साइज़)</option>
       </select>
       
       <div id="customSizeBox" style="display: none; margin-top: 10px; padding: 10px; background: #0f172a; border-radius: 8px; border: 1px dashed #475569;">
-        <label>चौड़ाई (Width in pixels):</label>
-        <input type="number" id="customW" placeholder="e.g. 2000" style="margin-bottom: 8px;">
-        <label>ऊँचाई (Height in pixels):</label>
+        <label>इकाई (Unit):</label>
+        <select id="customUnit" style="width:100%; padding:10px; background:#0f172a; color:#fff; border:1px solid #334155; border-radius:8px; margin-bottom:8px;">
+          <option value="px">पिक्सल (px)</option>
+          <option value="inch">इंच (inch) — 300 DPI पर</option>
+          <option value="cm">सेंटीमीटर (cm) — 300 DPI पर</option>
+        </select>
+        <label>चौड़ाई (Width):</label>
+        <input type="number" id="customW" placeholder="e.g. 2000 (px) / 12 (inch)" style="margin-bottom: 8px;">
+        <label>ऊँचाई (Height):</label>
         <input type="number" id="customH" placeholder="e.g. 3000">
       </div>
     </div>
 
-    <label style="margin-top: 12px;">AI बैकग्राउंड प्रॉम्प्ट:</label>
-    <textarea id="promptInput" rows="2" placeholder="gold luxury background"></textarea>
+    <label style="margin-top: 12px;">AI बैकग्राउंड / थीम प्रॉम्प्ट:</label>
+    <textarea id="promptInput" rows="2" placeholder="gold luxury background  (ऑटो डिज़ाइन में यह थीम हर डिज़ाइन में जुड़ेगा, जैसे: Ganesh puja)"></textarea>
 
     <h2 style="margin-top: 20px;">✋ टेक्स्ट को खींचकर सेट करें (Drag & Drop)</h2>
     <p class="hint">टेक्स्ट लिखने के बाद उसे उंगली से पकड़कर डिज़ाइन पर कहीं भी ले जाएँ।</p>
@@ -234,16 +256,33 @@
     <h2>3️⃣ AI टूल्स</h2>
     <div class="tabs">
       <button class="tab-btn active" onclick="openTab('tab-auto', this)">🚀 FULL AUTO</button>
+      <button class="tab-btn" onclick="openTab('tab-parts', this)">🧩 अलग-अलग पार्ट्स</button>
       <button class="tab-btn" onclick="openTab('tab-layers', this)">🧩 लेयर + वेक्टर</button>
-      <button class="tab-btn" onclick="openTab('tab-variations', this)">✨ 4 ऑटो डिज़ाइन</button>
+      <button class="tab-btn" onclick="openTab('tab-variations', this)">✨ 5 ऑटो डिज़ाइन</button>
       <button class="tab-btn" onclick="openTab('tab-vector', this)">📐 सिर्फ वेक्टर</button>
       <button class="tab-btn" onclick="openTab('tab-cut', this)">✂️ सिर्फ कटिंग</button>
       <button class="tab-btn" onclick="openTab('tab-hd', this)">🔼 सिर्फ HD</button>
     </div>
 
     <div id="tab-auto" class="tab-content active">
-      <p class="hint">सब कुछ एक साथ (कटिंग + HD + BG + नाम)</p>
+      <p class="hint">सब कुछ एक साथ (कटिंग + HD + BG + नाम) और अलग-अलग लेयर्स भी मिलेंगी</p>
       <button class="btn primary large" onclick="runAuto()">🚀 FULL AUTO चलाएँ</button>
+    </div>
+
+    <div id="tab-parts" class="tab-content">
+      <p class="hint">कटिंग → (चाहें तो HD) → डिज़ाइन के हर हिस्से (फूल, पट्टी, अक्षर...) को अलग-अलग PNG में बाँटता है। फिर उन्हें एडिटर में कहीं भी रखकर नया डिज़ाइन बना सकते हैं। जो हिस्से आपस में छू रहे हों वे एक ही पार्ट रहते हैं।</p>
+      <div class="check" style="display:flex; align-items:center; gap:8px; margin:8px 0;">
+        <input type="checkbox" id="splitHd" style="width:auto; transform:scale(1.2);">
+        <label for="splitHd" style="margin:0; cursor:pointer;">🔼 पहले HD बनाएँ (धीमा, पर साफ़ पार्ट्स)</label>
+      </div>
+      <label>पास-पास के टुकड़े:</label>
+      <select id="splitGap" style="width:100%; padding:10px; background:#0f172a; color:#fff; border:1px solid #334155; border-radius:8px; margin-bottom:8px;">
+        <option value="none">हर छोटा टुकड़ा अलग (अक्षर-अक्षर)</option>
+        <option value="small" selected>बहुत पास वाले जोड़ें (अक्षर → शब्द)</option>
+        <option value="medium">पास वाले जोड़ें (ज़्यादा)</option>
+        <option value="large">काफी पास वाले भी जोड़ें (कम पार्ट्स)</option>
+      </select>
+      <button class="btn primary" onclick="runSplitParts()">🧩 पार्ट्स बनाएँ</button>
     </div>
 
     <div id="tab-layers" class="tab-content">
@@ -256,8 +295,8 @@
     </div>
 
     <div id="tab-variations" class="tab-content">
-      <p class="hint">4 अलग-अलग प्रीमियम लुक बनाएँ</p>
-      <button class="btn primary" onclick="runVariations()">✨ 4 डिज़ाइन बनाएँ</button>
+      <p class="hint">आपकी कटी हुई डिज़ाइन के साथ 5 अलग-अलग नए AI डिज़ाइन (साइज़ के हिसाब से स्टाइल: शादी कार्ड, विज़िटिंग कार्ड, बैनर, टी-शर्ट)</p>
+      <button class="btn primary" onclick="runVariations()">✨ 5 डिज़ाइन बनाएँ</button>
     </div>
 
     <div id="tab-vector" class="tab-content">
@@ -266,7 +305,7 @@
     </div>
 
     <div id="tab-cut" class="tab-content">
-      <p class="hint">बैकग्राउंड हटाएँ</p>
+      <p class="hint">बैकग्राउंड हटाएँ (ऊपर "कटिंग का तरीका" के हिसाब से)</p>
       <button class="btn" onclick="runCutout()">✂️ कटिंग करें</button>
     </div>
 
@@ -289,5 +328,4 @@
 <footer><p>© AI Design Studio Pro</p></footer>
 <script src="script.js"></script>
 </body>
-      </html>
-      
+</html>
