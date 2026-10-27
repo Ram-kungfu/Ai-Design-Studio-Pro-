@@ -78,6 +78,11 @@ def health():
         "status": "ok", "plan": PLAN, "model": MODEL_NAME, "model_ready": _session is not None,
         "max_side": MAX_SIDE, "max_layers": MAX_LAYERS,
     }
+@app.head("/")
+@app.head("/health")
+def health_head():
+    return {"status": "ok"}
+
 
 
 def has_real_transparency(img_rgba: Image.Image) -> bool:
