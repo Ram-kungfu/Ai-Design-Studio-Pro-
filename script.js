@@ -1,6 +1,4 @@
-// 🔗 आपका Python (SAM/लेयर) सर्वर. ध्यान दें: असली काम Node सर्वर (server.js) इसी से करवाता है
-// (Render के मुख्य ऐप के Environment में SAM_SERVER_URL = इस लिंक + /split-layers होना चाहिए).
-// यहाँ ब्राउज़र इसे सिर्फ "जगाने" (Render फ्री सर्वर सो जाता है) के लिए इस्तेमाल करता है.
+// 🔗 आपका Python (SAM/लेयर) सर्वर
 const SAM_BACKEND_URL = "https://sam-server-new.onrender.com";
 
 // सोए हुए SAM सर्वर को जगाना और तैयार होने तक इंतज़ार (ज़्यादा से ज़्यादा ~2 मिनट)
@@ -39,33 +37,6 @@ async function readJson(r) {
   catch (e) { throw new Error(`सर्वर ने सही जवाब नहीं दिया (कोड ${r.status}). सर्वर जाग रहा या क्रैश हुआ हो सकता है, थोड़ी देर बाद फिर कोशिश करें।`); }
 }
 
-// 🔥 नया फंक्शन (बिना SAM के - फ्री तरीका)
-async function runDirectVector() {
-  if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('सीधा कट + वेक्टर बन रहा है...'); toggleButtons(true);
-  const fd = new FormData(); 
-  fd.append('image', currentFile);
-  
-  try {
-    fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
-    const r = await fetchWithRetry('/api/direct-vector', { method: 'POST', body: fd });
-    const data = await readJson(r);
-    if (data.error) throw new Error(data.error);
-    
-    const grid = $('layerResults');
-    data.results.forEach(res => {
-      // 🔥 यहाँ res.rawPng पास किया गया है ताकि बिना वॉटरमार्क वाला बटन काम करे
-      const div = createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, 'कट + वेक्टर', true);
-      grid.appendChild(div);
-    });
-    setStatus('✅ कट + वेक्टर तैयार!', 'ok');
-  } catch (e) { 
-    setStatus('❌ ' + e.message, 'err'); 
-  } finally { 
-    toggleButtons(false); 
-  }
-}
-
 const $ = id => document.getElementById(id);
 let currentFile = null;
 
@@ -93,7 +64,7 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
-// 🔥 कस्टम साइज़: px / इंच / सेमी - इंच और सेमी को 300 DPI पर पिक्सल में बदलता है (प्रिंट के लिए)
+// 🔥 कस्टम साइज़: px / इंच / सेमी
 function getCustomSize() {
   const unit = $('customUnit') ? $('customUnit').value : 'px';
   const f = unit === 'inch' ? 300 : (unit === 'cm' ? 300 / 2.54 : 1);
@@ -102,8 +73,7 @@ function getCustomSize() {
   return { w: Math.round(w * f), h: Math.round(h * f) };
 }
 
-// 🔥 नाम की सारी सेटिंग्स (पोज़िशन, स्टाइल, रंग, साइज़) एक जगह से सर्वर को भेजने के लिए
-// (पहले Auto और Variations में textX/textY जा ही नहीं रहे थे, इसलिए नाम गलत जगह छपता था/छूट जाता था)
+// 🔥 नाम की सारी सेटिंग्स सर्वर को भेजने के लिए
 async function appendTextSettings(fd) {
   fd.append('name', $('nameInput').value);
   fd.append('textX', currentX);
@@ -116,10 +86,13 @@ async function appendTextSettings(fd) {
   fd.append('isItalic', isItalic ? 'italic' : 'normal');
   fd.append('textStyle', $('textStyleSelect').value);
   if ($('fontFamilySelect')) fd.append('fontFamily', $('fontFamilySelect').value);
-  fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto'); // कटिंग का तरीका
+  fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto'); 
 
-  // 🔥 नाम फोन के ब्राउज़र में ही PNG बनाकर भेजें - इससे हिंदी नाम, कर्व, रोटेशन सब हूबहू एडिटर जैसा छपता है
-  // (सर्वर पर हिंदी फॉन्ट नहीं होता, इसीलिए पहले नाम गायब हो जाता था)
+  // 🔥 कस्टम प्रॉम्प्ट (अलग पार्ट काटने के लिए) को सर्वर तक भेजने का जुगाड़
+  if ($('customCutText') && $('customCutText').value.trim() !== '') {
+    fd.append('name', $('customCutText').value); // सर्वर इसे टेक्स्ट समझकर प्रोसेस करेगा
+  }
+
   const layer = await renderNameLayer();
   if (layer) {
     fd.append('nameImage', layer.blob, 'name.png');
@@ -167,10 +140,8 @@ const draggableText = $('draggableText');
 const editorContainer = $('editorContainer');
 
 if (draggableText && editorContainer) {
-  // 🔥 मोबाइल पर टेक्स्ट खींचते समय पेज स्क्रॉल न हो
   draggableText.style.touchAction = 'none';
 
-  // टेक्स्ट पर क्लिक करने पर सेलेक्ट (बॉर्डर और बटन दिखें)
   draggableText.addEventListener('pointerdown', (e) => {
     if (e.target.classList.contains('handle')) return;
     draggableText.classList.add('selected');
@@ -179,7 +150,6 @@ if (draggableText && editorContainer) {
     e.preventDefault();
   });
 
-  // बाहर क्लिक करने पर सेलेक्शन हटाएँ
   document.addEventListener('pointerdown', (e) => {
     if (!draggableText.contains(e.target) && e.target !== draggableText) {
       draggableText.classList.remove('selected');
@@ -191,7 +161,6 @@ if (draggableText && editorContainer) {
     const centerX = rect.left + (currentX / 100) * rect.width;
     const centerY = rect.top + (currentY / 100) * rect.height;
 
-    // 🔥 ड्रैग (Drag) करना
     if (isDragging) {
       let x = e.clientX - rect.left;
       let y = e.clientY - rect.top;
@@ -205,7 +174,6 @@ if (draggableText && editorContainer) {
       draggableText.style.top = currentY + '%';
     }
 
-    // 🔥 छोटा-बड़ा करना (Resize)
     if (isResizing) {
       let dist = Math.hypot(e.clientX - centerX, e.clientY - centerY);
       let scaleFactor = dist / startDist;
@@ -218,7 +186,6 @@ if (draggableText && editorContainer) {
       updateEditorText();
     }
 
-    // 🔥 घुमाना (Rotate)
     if (isRotating) {
       let angleRad = Math.atan2(e.clientY - centerY, e.clientX - centerX);
       let angleDeg = (angleRad * 180) / Math.PI;
@@ -239,7 +206,6 @@ if (draggableText && editorContainer) {
   });
 }
 
-// बटन (Handles) बनाना
 function setupHandles() {
   if (document.querySelector('.handle')) return;
 
@@ -251,7 +217,6 @@ function setupHandles() {
   rotateHandle.className = 'handle rotate';
   rotateHandle.style.touchAction = 'none';
 
-  // Resize (छोटा-बड़ा) बटन का लॉजिक
   resizeHandle.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
     const rect = editorContainer.getBoundingClientRect();
@@ -264,7 +229,6 @@ function setupHandles() {
     e.preventDefault();
   });
 
-  // Rotate (घुमाने) बटन का लॉजिक
   rotateHandle.addEventListener('pointerdown', (e) => {
     e.stopPropagation();
     isRotating = true;
@@ -289,7 +253,6 @@ function updateCurveValue() {
 }
 
 function updateAngleValue() {
-  // 🔥 Number में बदला ताकि 'तिरछा' में "30"+45 = "3045" जैसी गड़बड़ी न हो
   currentAngle = parseFloat($('angleSlider').value) || 0;
   $('angleVal').textContent = currentAngle;
   updateEditorText();
@@ -330,9 +293,6 @@ function applyCMYK() {
   updateEditorText();
 }
 
-// ============================================================
-// 🔥 HELPER: DYNAMIC FULL CIRCLE (छोटा/बड़ा अपने आप fit)
-// ============================================================
 function calcCircleRadius(text, fontSizePx) {
   const approxTextWidth = text.length * fontSizePx * 0.6;
   let r = approxTextWidth / (2 * Math.PI);
@@ -340,25 +300,20 @@ function calcCircleRadius(text, fontSizePx) {
   return r;
 }
 
-// 🔥 टेक्स्ट हटाने का फंक्शन (नया जोड़ा गया है)
 function clearText() {
   $('nameInput').value = '';
   updateEditorText();
 }
 
-// 🔥 नाम का SVG (एडिटर की लाइव प्रीव्यू और सर्वर को भेजी जाने वाली PNG - दोनों यही इस्तेमाल करते हैं)
 function buildTextSvgParts() {
-  // 🔥 यहाँ 'RAHUL' हटा दिया गया है ताकि खाली होने पर कुछ न दिखे
   const rawName = $('nameInput').value; 
   if (!rawName) return null;
 
-  const name = escapeHtml(rawName); // SVG में डालने के लिए सुरक्षित नाम
+  const name = escapeHtml(rawName);
   const style = $('textStyleSelect').value;
   const color = $('textColorPicker').value;
   const fontWeight = isBold ? 'bold' : 'normal';
   const fontStyle = isItalic ? 'italic' : 'normal';
-  
-  // 🔥 फॉन्ट फैमिली लें (अगर ड्रॉपडाउन नहीं है तो Arial ले लो)
   const fontFamily = $('fontFamilySelect') ? $('fontFamilySelect').value : 'Arial, sans-serif';
 
   const w = 400;
@@ -366,7 +321,6 @@ function buildTextSvgParts() {
   const pxY = h / 2;
   const fontSize = currentFontSize * 4;
 
-  // बॉक्स का रोटेशन (अगर 'तिरछा' चुना है तो 45 डिग्री तिरछा करें)
   let boxRotation = Number(currentAngle) || 0;
   if (style === 'rotate') {
     boxRotation = boxRotation + 45; 
@@ -380,7 +334,6 @@ function buildTextSvgParts() {
 
   let svgContent = "";
 
-  // 🔥 1. Vertical (खड़ा) का लॉजिक
   if (style === 'vertical') {
     svgContent = `
       <text x="${centerX}" y="${pxY}" text-anchor="middle" dominant-baseline="middle" 
@@ -390,29 +343,23 @@ function buildTextSvgParts() {
         ${name}
       </text>`;
   } 
-  // 🔥 बाकी सभी स्टाइल्स (Normal, Horizontal, Round, Full Circle) पाथ (Path) पर चलते हैं
   else {
     if (style === 'full_circle') {
-      // पूरा गोल (Zero) - बिल्कुल सीधा और परफेक्ट
       const r = calcCircleRadius(rawName, fontSize);
       pathD = `M ${centerX} ${pxY - r} a ${r},${r} 0 1,1 0,${r * 2} a ${r},${r} 0 1,1 0,${-r * 2}`;
     } 
     else if (style === 'round') {
-      // गोल (Round) - पूरा ऊपर की तरफ मुड़ा हुआ, एकदम सीधा
-      let controlY = pxY - (50 * 2); // ऊपर की तरफ मोड़
+      let controlY = pxY - (50 * 2); 
       pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
     } 
     else if (curveVal !== 0 && !isNaN(curveVal)) {
-      // कर्व स्लाइडर
       let controlY = pxY - (curveVal * 1.5);
       pathD = `M ${startX} ${pxY} Q ${centerX} ${controlY} ${endX} ${pxY}`;
     } 
     else {
-      // सीधा (Normal और Horizontal)
       pathD = `M ${startX} ${pxY} L ${endX} ${pxY}`;
     }
 
-    // 🔥 यहाँ से 'stroke="black"' हटा दिया गया है ताकि अक्षर कटे नहीं
     svgContent = `
       <path id="livePath" d="${pathD}" fill="transparent" />
       <text font-family="${fontFamily}" font-size="${fontSize}" font-weight="${fontWeight}" font-style="${fontStyle}" fill="${color}" pointer-events="none">
@@ -424,8 +371,6 @@ function buildTextSvgParts() {
   return { svgContent, boxRotation, w, h };
 }
 
-// 🔥 नाम की पारदर्शी (transparent) PNG बनाना - फोन के ब्राउज़र में ही, ताकि हिंदी फॉन्ट सही आए
-// रोटेशन PNG के अंदर ही जुड़ा होता है; चारों तरफ खाली जगह (padding) रखी है ताकि कर्व/घुमाव कटे नहीं
 async function renderNameLayer() {
   try {
     const parts = buildTextSvgParts();
@@ -456,7 +401,6 @@ async function renderNameLayer() {
     const cw = editorContainer ? editorContainer.getBoundingClientRect().width : 0;
     if (!blob || !cw) return null;
 
-    // wFrac = यह PNG एडिटर की चौड़ाई का कितना गुना है (सर्वर इसी अनुपात में फाइनल डिज़ाइन पर लगाता है)
     return { blob, wFrac: vbW / cw };
   } catch (e) {
     console.log('नाम की PNG नहीं बनी, सर्वर वाला तरीका चलेगा:', e.message);
@@ -464,13 +408,11 @@ async function renderNameLayer() {
   }
 }
 
-// 🔥 टेक्स्ट और स्टाइल अपडेट करने का सही लॉजिक (सभी स्टाइल्स के साथ)
 function updateEditorText() {
   if (!draggableText) return;
 
   const parts = buildTextSvgParts();
 
-  // अगर नाम खाली है, तो कुछ भी मत दिखाओ (सिर्फ बटन रहने दो)
   if (!parts) {
     const oldSvg = draggableText.querySelector('svg');
     if (oldSvg) oldSvg.remove();
@@ -487,7 +429,6 @@ function updateEditorText() {
     </svg>
   `;
 
-  // पुराने SVG को हटाकर नया लगाएँ (बटन्स को बचाकर)
   const oldSvg = draggableText.querySelector('svg');
   if (oldSvg) oldSvg.remove();
   draggableText.insertBefore(svgWrapper.firstElementChild, draggableText.firstChild);
@@ -524,12 +465,10 @@ async function applyManualText() {
   fd.append('isBold', isBold ? 'bold' : 'normal');
   fd.append('isItalic', isItalic ? 'italic' : 'normal');
   
-  // अगर फॉन्ट ड्रॉपडाउन है तो सर्वर पर भी भेजें
   if ($('fontFamilySelect')) {
     fd.append('fontFamily', $('fontFamilySelect').value);
   }
 
-  // 🔥 नाम की PNG भी भेजें (हिंदी फॉन्ट के लिए)
   const layer = await renderNameLayer();
   if (layer) {
     fd.append('nameImage', layer.blob, 'name.png');
@@ -540,7 +479,6 @@ async function applyManualText() {
     .then(r => r.json())
     .then(data => {
       if (data.error) throw new Error(data.error);
-      // 🔥 यहाँ नए कार्ड फंक्शन का इस्तेमाल हुआ है
       const div = createThumbCard(data.preview, data.finalRaw, null, '✅ टेक्स्ट सेट हो गया', false);
       $('resultGrid').appendChild(div);
       setStatus('✅ तैयार!', 'ok');
@@ -556,22 +494,16 @@ function setStatus(msg, type = '') {
   bar.innerHTML = (type === '' ? '<span class="spinner"></span>' : '') + msg;
 }
 
-// 🔥 अपडेटेड थंब कार्ड (अब हर जगह दोनों डाउनलोड बटन 100% दिखेंगे)
 function createThumbCard(wmUrl, rawUrl, pdfUrl, label, isVector = false) {
   const div = document.createElement('div');
   div.className = 'thumb';
-  
-  // अगर सर्वर से rawUrl (बिना वॉटरमार्क) नहीं आया है, तो बैकअप के तौर पर wmUrl (वॉटरमार्क वाली) ही डाउनलोड होगी
   const downloadRawUrl = rawUrl || wmUrl;
   
   let buttonsHtml = `
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 8px;">
       <a href="${wmUrl}" download class="btn small" style="text-align: center; font-size: 11px; padding: 6px; background: #475569;">⬇️ Watermark</a>
-      
       <a href="${downloadRawUrl}" download class="btn small primary" style="text-align: center; font-size: 11px; padding: 6px; background: #fbbf24; color: #000;">⬇️ बिना WM</a>
-      
       <button onclick="shareImage('${downloadRawUrl}')" class="btn small" style="text-align: center; font-size: 11px; padding: 6px; background: #3b82f6;">📤 शेयर</button>
-      
       ${isVector && pdfUrl ? `<a href="${pdfUrl}" download class="btn small primary" style="text-align: center; font-size: 11px; padding: 6px; background: #10b981; color: #fff;">⬇️ PDF</a>` : ''}
     </div>
   `;
@@ -584,16 +516,13 @@ function createThumbCard(wmUrl, rawUrl, pdfUrl, label, isVector = false) {
   return div;
 }
 
-// 🔥 showThumb को भी अपडेट कर दिया गया है
 function showThumb(url, label) {
   const div = createThumbCard(url, url, null, label, false);
   $('resultGrid').appendChild(div);
 }
 
-// 🔥 शेयर करने का फंक्शन (नया जोड़ा गया है)
 async function shareImage(url) {
   try {
-    // इमेज को फेच करके फाइल में बदलें
     const response = await fetch(url);
     const blob = await response.blob();
     const file = new File([blob], 'design.png', { type: blob.type });
@@ -605,7 +534,6 @@ async function shareImage(url) {
         text: 'मेरा AI डिज़ाइन देखिए!'
       });
     } else {
-      // अगर शेयर सपोर्ट नहीं है तो डाउनलोड कर दें
       const a = document.createElement('a');
       a.href = url;
       a.download = 'design.png';
@@ -628,7 +556,7 @@ function toggleButtons(disable) {
 }
 
 // ==========================================
-// 1. FULL AUTO
+// 1. FULL AUTO (एडिटर बटन जोड़ा गया)
 // ==========================================
 async function runAuto() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
@@ -643,7 +571,6 @@ async function runAuto() {
   fd.append('customH', cs.h);
   fd.append('use3d', $('use3dText').checked ? 'true' : 'false');
 
-  // 🔥 नाम + पोज़िशन (textX/textY) + स्टाइल सब एक साथ भेजें, ताकि नाम ठीक वहीं छपे जहाँ एडिटर में रखा है
   await appendTextSettings(fd);
 
   try {
@@ -651,21 +578,20 @@ async function runAuto() {
     const data = await r.json();
     if (data.error) throw new Error(data.error);
 
-    // 🔥 अब कटआउट का बिना-वॉटरमार्क (transparent) वर्ज़न भी डाउनलोड हो सकता है
     if (data.steps.cutPreview) {
       $('resultGrid').appendChild(createThumbCard(data.steps.cutPreview, data.steps.cutRaw, null, '✂️ कटआउट (transparent)', false));
     }
     if (data.steps.finalPreview) {
-      // 🔥 यहाँ नए कार्ड फंक्शन का इस्तेमाल हुआ है ताकि दोनों डाउनलोड बटन आ जाएँ
       const div = createThumbCard(data.steps.finalPreview, data.steps.finalRaw, null, '✅ Final', false);
       $('resultGrid').appendChild(div);
     }
 
-    // 🔥 अलग-अलग लेयर्स (सब एक ही साइज़ की PNG, एक के ऊपर एक ठीक बैठती हैं - Photoshop/Canva में सीधे डालिए)
     if (data.steps.layerBg) $('resultGrid').appendChild(createThumbCard(data.steps.layerBg, data.steps.layerBg, null, '🧩 लेयर 1: बैकग्राउंड', false));
     if (data.steps.layerCut) $('resultGrid').appendChild(createThumbCard(data.steps.layerCut, data.steps.layerCut, null, '🧩 लेयर 2: कटआउट (transparent)', false));
     if (data.steps.layerText) $('resultGrid').appendChild(createThumbCard(data.steps.layerText, data.steps.layerText, null, '🧩 लेयर 3: नाम (transparent)', false));
-    if (data.steps.layerBg && data.steps.layerCut && data.steps.size) addShareCard(data.steps); // क्लाइंट को भेजने का लिंक
+    
+    // 🔥 FULL AUTO में एडिटर बटन
+    if (data.steps.layerBg && data.steps.layerCut && data.steps.size) addShareCard(data.steps); 
 
     $('downloadFull').href = data.steps.finalRaw;
     $('downloadPreview').href = data.steps.finalPreview;
@@ -680,30 +606,41 @@ async function runAuto() {
 }
 
 // ==========================================
-// 2. SPLIT + TRACE (SAM + Vector)
+// 2. SPLIT + TRACE (SAM + Vector) - 🔥 यहाँ एडिटर बटन जोड़ दिया गया है
 // ==========================================
 async function runSplitAndTrace() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
   clearGrid(); setStatus('SAM लेयर्स को अलग कर रहा है...'); toggleButtons(true);
-  const fd = new FormData(); fd.append('image', currentFile);
+  const fd = new FormData(); 
+  fd.append('image', currentFile);
+  
+  // 🔥 कस्टम टेक्स्ट यहाँ भी भेजा जा रहा है
+  if ($('customCutText') && $('customCutText').value.trim() !== '') {
+    fd.append('customPrompt', $('customCutText').value);
+  }
+
   try {
-    await wakeSamServer(msg => setStatus(msg)); // पहले SAM सर्वर जगाओ
+    await wakeSamServer(msg => setStatus(msg));
     setStatus('SAM लेयर्स को अलग कर रहा है... (कुछ मिनट लग सकते हैं, पेज खुला रखें)');
     const r = await fetchWithRetry('/api/split-and-trace', { method: 'POST', body: fd });
     const data = await readJson(r);
     if (data.error) throw new Error(data.error);
     const grid = $('layerResults');
+    
     data.results.forEach(res => {
-      // 🔥 अब बिना वॉटरमार्क वाली इमेज (res.rawPng) पास हो रही है (पहले दोनों बटन पर वॉटरमार्क वाली ही जाती थी)
       const div = createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, `लेयर ${res.layerNumber}`, true);
       grid.appendChild(div);
     });
+
+    // 🔥 यहाँ एडिटर बटन जोड़ दिया गया है ताकि बाद में एडिट कर सकें
+    addPartsEditorCard({ parts: data.results, cw: 500, ch: 500 }); 
+
     setStatus('✅ लेयर्स तैयार!', 'ok');
   } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
 }
 
 // ==========================================
-// 3. VARIATIONS (5 डिज़ाइन)
+// 3. VARIATIONS (5 डिज़ाइन) - 🔥 यहाँ एडिटर बटन जोड़ दिया गया है
 // ==========================================
 async function runVariations() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
@@ -715,10 +652,8 @@ async function runVariations() {
   const cs = getCustomSize();
   fd.append('customW', cs.w);
   fd.append('customH', cs.h);
+  fd.append('prompt', $('promptInput').value); 
 
-  fd.append('prompt', $('promptInput').value); // आपका थीम/प्रॉम्प्ट हर ऑटो-डिज़ाइन में जुड़ेगा
-
-  // 🔥 पहले सिर्फ नाम जा रहा था; अब पोज़िशन, रंग, साइज़, स्टाइल सब जा रहा है ताकि नाम हर डिज़ाइन में सही छपे
   await appendTextSettings(fd);
 
   try {
@@ -727,13 +662,15 @@ async function runVariations() {
     
     if (data.error) throw new Error(data.error);
     
-    // 🔥 यहाँ हमने कोड बदला है ताकि wmUrl और rawUrl दोनों सही से पास हो जाएँ
     if (data.variations && data.variations.length > 0) {
       data.variations.forEach((item, i) => {
-        // अब सर्वर से item.wmUrl (वॉटरमार्क वाली) और item.rawUrl (बिना वॉटरमार्क वाली) आ रहा है
         const div = createThumbCard(item.wmUrl, item.rawUrl, null, `✨ डिज़ाइन ${i + 1}`, false);
         $('resultGrid').appendChild(div);
       });
+
+      // 🔥 वेरिएशन में भी एडिटर बटन आएगा
+      addPartsEditorCard({ parts: data.variations.map(v => ({url: v.rawUrl, x:0, y:0, w:500, h:500})), cw: 500, ch: 500 }); 
+
       setStatus(`✅ ${data.variations.length} डिज़ाइन तैयार!`, 'ok');
     } else {
       setStatus('❌ कोई डिज़ाइन नहीं बन पाया, फिर से कोशिश करें।', 'err');
@@ -747,7 +684,7 @@ async function runVariations() {
 }
 
 // ==========================================
-// 4. VECTOR ONLY
+// 4. VECTOR ONLY (🔥 यहाँ एडिटर बटन जोड़ दिया गया है)
 // ==========================================
 async function runVector() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
@@ -759,6 +696,10 @@ async function runVector() {
     if (d.error) throw new Error(d.error);
     $('downloadFull').href = d.url;
     $('downloadBar').classList.remove('hidden');
+    
+    // 🔥 एडिटर बटन    $('resultGrid').appendChild(createThumbCard(d.url, d.url, null, '✅ वेक्टर PDF तैयार', true));
+    addPartsEditorCard({ parts: [{url: d.url, x:0, y:0, w:500, h:500}], cw: 500, ch: 500 });
+
     setStatus('✅ वेक्टर PDF तैयार', 'ok');
   } catch (e) {
     setStatus('❌ ' + e.message, 'err');
@@ -768,26 +709,74 @@ async function runVector() {
 }
 
 // ==========================================
-// 5. CUTOUT ONLY
+// 5. CUTOUT ONLY (🔥 यहाँ एडिटर बटन जोड़ दिया गया है)
 // ==========================================
 async function runCutout() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
   clearGrid(); setStatus('कटिंग हो रही है...'); toggleButtons(true);
-  const fd = new FormData(); fd.append('image', currentFile); fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
+  const fd = new FormData(); 
+  fd.append('image', currentFile); 
+  fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
+  
+  // 🔥 कस्टम टेक्स्ट यहाँ भी भेजा जा रहा है
+  if ($('customCutText') && $('customCutText').value.trim() !== '') {
+    fd.append('customPrompt', $('customCutText').value);
+  }
+
   try {
     const r = await fetch('/api/cutout', { method: 'POST', body: fd });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     
-    // 🔥 यहाँ d.finalRaw पास किया गया है ताकि बिना वॉटरमार्क वाला बटन काम करे
     const div = createThumbCard(d.preview, d.finalRaw, null, '✂️ कटिंग', false);
     $('resultGrid').appendChild(div);
     
+    // 🔥 एडिटर बटन
+    addPartsEditorCard({ parts: [{url: d.finalRaw, x:0, y:0, w:500, h:500}], cw: 500, ch: 500 });
+
     setStatus('✅ हो गया', 'ok');
   } catch (e) {
     setStatus('❌ ' + e.message, 'err');
   } finally {
     toggleButtons(false);
+  }
+}
+
+// ==========================================
+// 🔥 नया फंक्शन: सीधा कट + वेक्टर (Direct Vector) + कस्टम प्रॉम्प्ट + एडिटर बटन
+// ==========================================
+async function runDirectVector() {
+  if (!currentFile) return alert('फ़ोटो अपलोड करें');
+  clearGrid(); setStatus('सीधा कट + वेक्टर बन रहा है...'); toggleButtons(true);
+  const fd = new FormData(); 
+  fd.append('image', currentFile);
+  
+  try {
+    fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
+    
+    // 🔥 कस्टम टेक्स्ट (सिर्फ उसे काटने के लिए) यहाँ भेजा जा रहा है
+    if ($('customCutText') && $('customCutText').value.trim() !== '') {
+      fd.append('customPrompt', $('customCutText').value);
+    }
+
+    const r = await fetchWithRetry('/api/direct-vector', { method: 'POST', body: fd });
+    const data = await readJson(r);
+    if (data.error) throw new Error(data.error);
+    
+    const grid = $('layerResults');
+    data.results.forEach(res => {
+      const div = createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, 'कट + वेक्टर', true);
+      grid.appendChild(div);
+    });
+
+    // 🔥 यहाँ एडिटर बटन जोड़ दिया गया है
+    addPartsEditorCard({ parts: data.results, cw: 500, ch: 500 });
+
+    setStatus('✅ कट + वेक्टर तैयार!', 'ok');
+  } catch (e) { 
+    setStatus('❌ ' + e.message, 'err'); 
+  } finally { 
+    toggleButtons(false); 
   }
 }
 
@@ -803,7 +792,6 @@ async function runUpscale() {
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     
-    // 🔥 यहाँ d.finalRaw पास किया गया है ताकि बिना वॉटरमार्क वाला बटन काम करे
     const div = createThumbCard(d.preview, d.finalRaw, null, '🔼 HD', false);
     $('resultGrid').appendChild(div);
     
@@ -855,7 +843,7 @@ async function createShareLink(steps) {
   const texts = name ? [{
     text: name,
     x: currentX, y: currentY,
-    sizeFrac: (currentFontSize * 4) / (cw || 340), // फॉन्ट साइज़, canvas की चौड़ाई के अनुपात में
+    sizeFrac: (currentFontSize * 4) / (cw || 340),
     color: $('textColorPicker').value,
     bold: isBold, italic: isItalic,
     font: $('fontFamilySelect') ? $('fontFamilySelect').value : 'Arial, sans-serif',
@@ -908,7 +896,6 @@ function buildTextsForProject() {
 
 async function createPartsProject(data) {
   const { W, H } = getCanvasSize();
-  // कटी हुई पूरी डिज़ाइन को canvas पर उसी तरह बैठाना जैसे FULL AUTO में बैठती है
   const s = Math.min(0.92 * W / data.cw, 0.74 * H / data.ch);
   const x0 = (W - data.cw * s) / 2;
   const y0 = Math.max(0, (H - data.ch * s) / 2 + 0.05 * H);
@@ -931,7 +918,7 @@ function addPartsEditorCard(data) {
   const div = document.createElement('div');
   div.className = 'thumb';
   div.innerHTML = `
-    <p style="margin-bottom:8px;">🎨 इन ${data.parts.length} पार्ट्स से नया डिज़ाइन बनाएँ<br><span style="font-size:11px;opacity:.8;">हर पार्ट को खींचें, छोटा-बड़ा करें, घुमाएँ, कॉपी करें। AI बैकग्राउंड और नाम भी वहीं लगेगा।</span></p>
+    <p style="margin-bottom:8px;">🎨 इन ${data.parts ? data.parts.length : 0} पार्ट्स से नया डिज़ाइन बनाएँ<br><span style="font-size:11px;opacity:.8;">हर पार्ट को खींचें, छोटा-बड़ा करें, घुमाएँ, कॉपी करें। AI बैकग्राउंड और नाम भी वहीं लगेगा।</span></p>
     <button class="btn small primary" style="width:100%; background:#8b5cf6; color:#fff;">🎨 एडिटर तैयार करें</button>
     <div class="editorOut" style="margin-top:8px; word-break:break-all; font-size:12px;"></div>
   `;
