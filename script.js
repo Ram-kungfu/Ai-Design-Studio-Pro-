@@ -1,7 +1,45 @@
-
-// 🔥 नया फंक्शन (बिना SAM के - फ्री तरीका)
+// 🔗 आपका Python (SAM/लेयर) सर्वर. ध्यान दें: असली काम Node सर्वर (server.js) इसी से करवाता है
+// (Render के मुख्य ऐप के Environment में SAM_SERVER_URL = इस लिंक + /split-layers होना चाहिए).
+// यहाँ ब्राउज़र इसे सिर्फ "जगाने" (Render फ्री सर्वर सो जाता है) के लिए इस्तेमाल करता है.
 const SAM_BACKEND_URL = "https://sam-server-new.onrender.com";
 
+// सोए हुए SAM सर्वर को जगाना और तैयार होने तक इंतज़ार (ज़्यादा से ज़्यादा ~2 मिनट)
+async function wakeSamServer(onStatus) {
+  const started = Date.now();
+  try { fetch(SAM_BACKEND_URL + '/health', { mode: 'no-cors', cache: 'no-store' }).catch(() => {}); } catch (e) {}
+  for (let i = 0; i < 24; i++) {
+    try {
+      const r = await fetch(SAM_BACKEND_URL + '/health', { cache: 'no-store' });
+      if (r.ok) return true;
+    } catch (e) { /* अभी सो रहा है / जाग रहा है */ }
+    if (onStatus) onStatus(`⏳ SAM सर्वर जाग रहा है... ${Math.round((Date.now() - started) / 1000)} सेकंड (पहली बार 1-2 मिनट लग सकते हैं, पेज खुला रखें)`);
+    await new Promise(res => setTimeout(res, 5000));
+  }
+  return false;
+}
+
+// नेटवर्क टूटने ("Failed to fetch") पर खुद-ब-खुद दोबारा कोशिश
+async function fetchWithRetry(url, options, tries = 3) {
+  for (let i = 0; i < tries; i++) {
+    try { return await fetch(url, options); }
+    catch (e) {
+      if (i < tries - 1) {
+        setStatus(`⚠️ कनेक्शन टूटा, फिर कोशिश (${i + 2}/${tries})... सर्वर जाग रहा हो सकता है, पेज खुला रखें`);
+        await new Promise(res => setTimeout(res, 8000));
+      }
+    }
+  }
+  throw new Error('सर्वर से कनेक्शन नहीं हो पाया (Failed to fetch)। 1-2 मिनट बाद फिर कोशिश करें और पेज खुला रखें।');
+}
+
+// जवाब JSON न हो (जैसे Render का 502 पेज) तो समझने लायक संदेश
+async function readJson(r) {
+  const t = await r.text();
+  try { return JSON.parse(t); }
+  catch (e) { throw new Error(`सर्वर ने सही जवाब नहीं दिया (कोड ${r.status}). सर्वर जाग रहा या क्रैश हुआ हो सकता है, थोड़ी देर बाद फिर कोशिश करें।`); }
+}
+
+// 🔥 नया फंक्शन (बिना SAM के - फ्री तरीका)
 async function runDirectVector() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
   clearGrid(); setStatus('सीधा कट + वेक्टर बन रहा है...'); toggleButtons(true);
@@ -10,9 +48,8 @@ async function runDirectVector() {
   
   try {
     fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
-    const r = await fetch('/api/direct-vector', { method: 'POST', body: fd });
-    
-    const data = await r.json();
+    const r = await fetchWithRetry('/api/direct-vector', { method: 'POST', body: fd });
+    const data = await readJson(r);
     if (data.error) throw new Error(data.error);
     
     const grid = $('layerResults');
@@ -643,41 +680,27 @@ async function runAuto() {
 }
 
 // ==========================================
-// 2. SPLIT + TRACE (SAM + Vector) - फाइनल सही कोड
+// 2. SPLIT + TRACE (SAM + Vector)
 // ==========================================
 async function runSplitAndTrace() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
   clearGrid(); setStatus('SAM लेयर्स को अलग कर रहा है...'); toggleButtons(true);
-  
-  const fd = new FormData(); 
-  fd.append('image', currentFile);
-  
+  const fd = new FormData(); fd.append('image', currentFile);
   try {
-    // 🔥 सीधे Render वाले SAM सर्वर और सही एंडपॉइंट पर रिक्वेस्ट भेजने के लिए
-    const r = await fetch(`${SAM_BACKEND_URL}/split-layers`, { 
-      method: 'POST', 
-      body: fd 
-    });
-    
-    const data = await r.json();
+    await wakeSamServer(msg => setStatus(msg)); // पहले SAM सर्वर जगाओ
+    setStatus('SAM लेयर्स को अलग कर रहा है... (कुछ मिनट लग सकते हैं, पेज खुला रखें)');
+    const r = await fetchWithRetry('/api/split-and-trace', { method: 'POST', body: fd });
+    const data = await readJson(r);
     if (data.error) throw new Error(data.error);
-    
     const grid = $('layerResults');
     data.results.forEach(res => {
-      // 🔥 बिना वॉटरमार्क वाली इमेज और वेक्टर PDF सही से पास हो रहे हैं
+      // 🔥 अब बिना वॉटरमार्क वाली इमेज (res.rawPng) पास हो रही है (पहले दोनों बटन पर वॉटरमार्क वाली ही जाती थी)
       const div = createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, `लेयर ${res.layerNumber}`, true);
       grid.appendChild(div);
     });
-    
     setStatus('✅ लेयर्स तैयार!', 'ok');
-  } catch (e) { 
-    setStatus('❌ ' + e.message, 'err'); 
-  } finally { 
-    toggleButtons(false); 
-  }
+  } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
 }
-
-
 
 // ==========================================
 // 3. VARIATIONS (5 डिज़ाइन)
