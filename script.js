@@ -1036,4 +1036,4 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', updateEditorText);
 } else {
     updateEditorText();
-}
+                                                    }
