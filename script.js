@@ -94,14 +94,16 @@ function openTab(tabId, btn) {
 
 // --- File Upload ---
 const dropzone = $('dropzone'), fileInput = $('fileInput'), previewImg = $('previewImg'), dropText = $('dropText');
-dropzone.addEventListener('click', () => fileInput.click());
-dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
-dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
-dropzone.addEventListener('drop', e => {
-  e.preventDefault(); dropzone.classList.remove('drag');
-  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+if(dropzone) {
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault(); dropzone.classList.remove('drag');
+      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+}
 
 function handleFile(file) {
   currentFile = file;
@@ -110,8 +112,10 @@ function handleFile(file) {
     previewImg.src = ev.target.result;
     previewImg.classList.remove('hidden');
     const editorBg = $('editorBg');
-    editorBg.src = ev.target.result;
-    editorBg.style.display = 'block';
+    if(editorBg) {
+        editorBg.src = ev.target.result;
+        editorBg.style.display = 'block';
+    }
     dropText.textContent = `✅ ${file.name}`;
   };
   reader.readAsDataURL(file);
@@ -190,7 +194,9 @@ function setupHandles() {
   rotateHandle.addEventListener('pointerdown', (e) => {
     e.stopPropagation(); isRotating = true; e.preventDefault();
   });
-  draggableText.appendChild(resizeHandle); draggableText.appendChild(rotateHandle);
+  if(draggableText) {
+      draggableText.appendChild(resizeHandle); draggableText.appendChild(rotateHandle);
+  }
 }
 
 function syncColorPicker() { $('textColorPicker').value = $('textColorSelect').value; updateEditorText(); }
@@ -267,10 +273,12 @@ function updateEditorText() {
   setupHandles();
 }
 
-document.getElementById('aspectSelect').addEventListener('change', function () {
-  const box = document.getElementById('customSizeBox');
-  box.style.display = this.value === 'custom' ? 'block' : 'none';
-});
+if ($('aspectSelect')) {
+    $('aspectSelect').addEventListener('change', function () {
+      const box = $('customSizeBox');
+      if(box) box.style.display = this.value === 'custom' ? 'block' : 'none';
+    });
+}
 
 async function applyManualText() {
   const name = $('nameInput').value;
@@ -286,7 +294,8 @@ async function applyManualText() {
 }
 
 function setStatus(msg, type = '') {
-  const bar = $('statusBar'); bar.className = 'status ' + type;
+  const bar = $('statusBar'); if(!bar) return;
+  bar.className = 'status ' + type;
   bar.innerHTML = (type === '' ? '<span class="spinner"></span>' : '') + msg;
 }
 
@@ -317,16 +326,19 @@ async function shareImage(url) {
   } catch (error) { alert('इमेज शेयर नहीं हो पाई, कृपया डाउनलोड करें।'); }
 }
 
-function clearGrid() { $('resultGrid').innerHTML = ''; $('layerResults').innerHTML = ''; $('downloadBar').classList.add('hidden'); }
+function clearGrid() { 
+    if($('resultGrid')) $('resultGrid').innerHTML = ''; 
+    if($('layerResults')) $('layerResults').innerHTML = ''; 
+    if($('downloadBar')) $('downloadBar').classList.add('hidden'); 
+}
 function toggleButtons(disable) { document.querySelectorAll('.btn').forEach(b => b.disabled = disable); }
 
 // ==========================================
-// 🔥 मैजिक फिक्स: एडिटर के लिए डेटा को सुरक्षित बनाना
+// 🔥 मैजिक फिक्स: एडिटर के लिए डेटा को सुरक्षित बनाना (x,y,w,h डिफ़ॉल्ट सेट करना)
 // ==========================================
 function createSafeEditorData(dataResults) {
   return {
     parts: dataResults.map(r => {
-      // अगर सर्वर ने x, y, w, h नहीं भेजा है, तो डिफ़ॉल्ट वैल्यू सेट करें
       return {
         url: r.rawPng || r.previewPng || r.vectorPdf || r.url || '',
         x: (r.x !== undefined) ? r.x : 0, 
@@ -369,14 +381,14 @@ async function runAuto() {
 }
 
 // ==========================================
-// 2. SPLIT + TRACE (लेयर + वेक्टर) - 🔥 फिक्स हो गया
+// 2. SPLIT + TRACE (लेयर + वेक्टर) - 🔥 100% फिक्स
 // ==========================================
 async function runSplitAndTrace() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
   clearGrid(); setStatus('SAM लेयर्स को अलग कर रहा है...'); toggleButtons(true);
   const fd = new FormData(); fd.append('image', currentFile);
   
-  // 🔥 कस्टम कटिंग टेक्स्ट सर्वर के 'name' फील्ड में भेज रहे हैं
+  // 🔥 कस्टम कटिंग टेक्स्ट सर्वर के 'name' फील्ड में भेज रहे हैं (सिर्फ नाम काटने के लिए)
   if ($('customCutText') && $('customCutText').value.trim() !== '') {
     fd.append('name', $('customCutText').value);
   }
@@ -389,12 +401,13 @@ async function runSplitAndTrace() {
     if (data.error) throw new Error(data.error);
     
     const grid = $('layerResults');
-    data.results.forEach(res => {
-      grid.appendChild(createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, `लेयर ${res.layerNumber}`, true));
-    });
-
-    // 🔥 एडिटर बटन के लिए डेटा सुरक्षित तरीके से भेजना
-    addPartsEditorCard(createSafeEditorData(data.results)); 
+    if (data.results) {
+        data.results.forEach(res => {
+          grid.appendChild(createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, `लेयर ${res.layerNumber}`, true));
+        });
+        // 🔥 एडिटर बटन के लिए डेटा सुरक्षित तरीके से भेजना
+        addPartsEditorCard(createSafeEditorData(data.results)); 
+    }
 
     setStatus('✅ लेयर्स तैयार!', 'ok');
   } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
@@ -420,10 +433,7 @@ async function runVariations() {
       data.variations.forEach((item, i) => {
         $('resultGrid').appendChild(createThumbCard(item.wmUrl, item.rawUrl, null, `✨ डिज़ाइन ${i + 1}`, false));
       });
-
-      // 🔥 एडिटर बटन के लिए डेटा सुरक्षित तरीके से भेजना
       addPartsEditorCard(createSafeEditorData(data.variations.map(v => ({ url: v.rawUrl }))));
-
       setStatus(`✅ ${data.variations.length} डिज़ाइन तैयार!`, 'ok');
     } else { setStatus('❌ कोई डिज़ाइन नहीं बन पाया।', 'err'); }
   } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
@@ -442,8 +452,6 @@ async function runVector() {
     if (d.error) throw new Error(d.error);
     $('downloadFull').href = d.url; $('downloadBar').classList.remove('hidden');
     $('resultGrid').appendChild(createThumbCard(d.url, d.url, null, '✅ वेक्टर PDF तैयार', true));
-    
-    // 🔥 एडिटर बटन
     addPartsEditorCard(createSafeEditorData([{ url: d.url }]));
     setStatus('✅ वेक्टर PDF तैयार', 'ok');
   } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
@@ -459,7 +467,6 @@ async function runCutout() {
   fd.append('image', currentFile); 
   fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
   
-  // 🔥 कस्टम टेक्स्ट सर्वर के 'name' फील्ड में भेज रहे हैं
   if ($('customCutText') && $('customCutText').value.trim() !== '') {
     fd.append('name', $('customCutText').value);
   }
@@ -469,15 +476,13 @@ async function runCutout() {
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     $('resultGrid').appendChild(createThumbCard(d.preview, d.finalRaw, null, '✂️ कटिंग', false));
-    
-    // 🔥 एडिटर बटन
     addPartsEditorCard(createSafeEditorData([{ url: d.finalRaw }]));
     setStatus('✅ हो गया', 'ok');
   } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
 }
 
 // ==========================================
-// 🔥 6. DIRECT VECTOR (सीधा कट + वेक्टर) - यहाँ भी एडिटर फिक्स हुआ
+// 🔥 6. DIRECT VECTOR (सीधा कट + वेक्टर) - 🔥 100% फिक्स
 // ==========================================
 async function runDirectVector() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
@@ -488,7 +493,7 @@ async function runDirectVector() {
   try {
     fd.append('cutMode', $('cutModeSelect') ? $('cutModeSelect').value : 'auto');
     
-    // 🔥 कस्टम टेक्स्ट सर्वर के 'name' फील्ड में भेज रहे हैं
+    // 🔥 कस्टम टेक्स्ट सर्वर के 'name' फील्ड में भेज रहे हैं (सिर्फ नाम काटने के लिए)
     if ($('customCutText') && $('customCutText').value.trim() !== '') {
       fd.append('name', $('customCutText').value);
     }
@@ -498,12 +503,13 @@ async function runDirectVector() {
     if (data.error) throw new Error(data.error);
     
     const grid = $('layerResults');
-    data.results.forEach(res => {
-      grid.appendChild(createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, 'कट + वेक्टर', true));
-    });
-
-    // 🔥 एडिटर बटन (सही तरीके से कॉल किया गया)
-    addPartsEditorCard(createSafeEditorData(data.results));
+    if(data.results) {
+        data.results.forEach(res => {
+          grid.appendChild(createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, 'कट + वेक्टर', true));
+        });
+        // 🔥 एडिटर बटन (सही तरीके से कॉल किया गया)
+        addPartsEditorCard(createSafeEditorData(data.results));
+    }
 
     setStatus('✅ कट + वेक्टर तैयार!', 'ok');
   } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
@@ -633,4 +639,8 @@ async function runSplitParts() {
 }
 
 // पेज लोड होते ही एडिटर अपडेट करें
-updateEditorText();
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', updateEditorText);
+} else {
+    updateEditorText();
+  }
