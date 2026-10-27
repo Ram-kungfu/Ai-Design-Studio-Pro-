@@ -631,6 +631,17 @@ async function runAuto() {
     
     if (data.steps.layerBg && data.steps.layerCut && data.steps.size) addShareCard(data.steps); 
 
+    // 🔥 FULL AUTO में एडिटर बटन जोड़ दिया गया है
+    if (data.steps.layerCut || data.steps.finalRaw) {
+        const editorParts = [];
+        if (data.steps.layerBg) editorParts.push({url: data.steps.layerBg});
+        if (data.steps.layerCut) editorParts.push({url: data.steps.layerCut});
+        if (data.steps.layerText) editorParts.push({url: data.steps.layerText});
+        if (editorParts.length > 0) {
+            addPartsEditorCard(createSafeEditorData(editorParts));
+        }
+    }
+
     $('downloadFull').href = data.steps.finalRaw;
     $('downloadPreview').href = data.steps.finalPreview;
     $('downloadBar').classList.remove('hidden');
@@ -1006,6 +1017,7 @@ async function runSplitParts() {
       return;
     }
 
+    // 🔥 अलग-अलग पार्ट्स में एडिटर बटन ठीक से जोड़ दिया गया है
     addPartsEditorCard(data);
     $('resultGrid').appendChild(createThumbCard(data.cutUrl, data.cutUrl, null, '✂️ पूरी कटी हुई डिज़ाइन', false));
     data.parts.forEach((p, i) => {
@@ -1024,4 +1036,4 @@ if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', updateEditorText);
 } else {
     updateEditorText();
-      }
+}
