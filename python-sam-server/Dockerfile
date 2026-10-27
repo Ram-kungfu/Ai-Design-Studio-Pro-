@@ -1,169 +1,28 @@
-import io
-import os
-import gc
-import time
-import base64
-import threading
-from typing import Optional
+FROM python:3.10-slim
 
-import cv2
-import numpy as np
-import uvicorn
-from fastapi import FastAPI, File, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from PIL import Image, ImageOps
+# सिस्टम लाइब्रेरीज़ (OpenCV और Rembg के लिए)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
-app = FastAPI(title="Layer Splitter (rembg + OpenCV)")
+# मेमोरी बचाने की सेटिंग + मॉडल की फोल्डर
+ENV PYTHONUNBUFFERED=1 \
+    OMP_NUM_THREADS=1 \
+    U2NET_HOME=/app/.u2net
 
-# ब्राउज़र से सीधे /health जाँचने (जगाने) के लिए CORS खुला
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+WORKDIR /app
 
-# ============================================================
-# 🎛️ प्लान के हिसाब से सेटिंग: Render के Environment में सिर्फ एक वैल्यू बदलनी है
-#    SERVER_PLAN = free      → फ्री / Starter ($7, 512MB RAM)   [अभी यही]
-#    SERVER_PLAN = standard  → Standard ($25, 2GB RAM)
-#    SERVER_PLAN = pro       → Pro ($85, 4GB RAM) या ऊपर
-# ============================================================
-PLANS = {
-    #            मॉडल       बड़ी साइड(px)  ज़्यादा से ज़्यादा लेयर्स
-    "free":     {"model": "silueta", "max_side": 1280, "max_layers": 8},
-    "standard": {"model": "u2net",   "max_side": 2000, "max_layers": 25},
-    "pro":      {"model": "u2net",   "max_side": 3200, "max_layers": 60},
-}
-PLAN = os.environ.get("SERVER_PLAN", "free").strip().lower()
-if PLAN == "starter":
-    PLAN = "free"   # Starter में RAM उतनी ही (512MB) है, सिर्फ CPU तेज़ और सर्वर सोता नहीं
-_preset = PLANS.get(PLAN, PLANS["free"])
+# पहले requirements.txt (torch/torchvision हटा दिए - इस कोड में इनका इस्तेमाल है ही नहीं, बस बिल्ड भारी और धीमा करते थे)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# चाहें तो अलग-अलग भी बदल सकते हैं (ये प्लान वाली वैल्यू को दबा देती हैं):
-#   REMBG_MODEL  (silueta = छोटा ~43MB | u2net = बड़ा ~176MB, बेहतर क्वालिटी)
-#   MAX_SIDE     (इससे बड़ी इमेज पहले छोटी की जाती है, मेमोरी बचाने के लिए)
-#   MAX_LAYERS   (0 = जितने मिलें सब; पर नीचे HARD_MAX_LAYERS की सीमा रहेगी)
-MODEL_NAME = os.environ.get("REMBG_MODEL", _preset["model"])
-MAX_SIDE = int(os.environ.get("MAX_SIDE", _preset["max_side"]))
-MAX_LAYERS = int(os.environ.get("MAX_LAYERS", _preset["max_layers"]))
+# दोनों मॉडल अभी (बिल्ड के समय) ही डाउनलोड कर लो, ताकि हर बार जागने पर डाउनलोड न हो
+# और बाद में प्लान बदलने (SERVER_PLAN=standard/pro) पर दोबारा बिल्ड न करना पड़े
+RUN python -c "from rembg import new_session; [new_session(m) for m in ('silueta', 'u2net')]"
 
-HARD_MAX_LAYERS = 100   # सुरक्षा सीमा
-HARD_MAX_SIDE = 4000
+# बाकी कोड
+COPY . .
 
-_session = None
-_session_lock = threading.Lock()
-_work_lock = threading.Lock()   # एक समय में सिर्फ एक इमेज प्रोसेस हो (मेमोरी का धमाका न हो)
-
-
-def get_session():
-    """rembg का मॉडल सिर्फ एक बार लोड करें (हर रिक्वेस्ट पर नहीं)."""
-    global _session
-    if _session is None:
-        with _session_lock:
-            if _session is None:
-                from rembg import new_session
-                print(f"[sam] मॉडल लोड हो रहा है: {MODEL_NAME}", flush=True)
-                _session = new_session(MODEL_NAME)
-                print("[sam] मॉडल तैयार", flush=True)
-    return _session
-
-
-@app.on_event("startup")
-def preload_model():
-    # सर्वर चालू होते ही मॉडल पीछे से लोड कर लो, ताकि पहली रिक्वेस्ट धीमी न हो
-    threading.Thread(target=lambda: get_session(), daemon=True).start()
-
-
-@app.get("/")
-@app.get("/health")
-def health():
-    return {
-        "status": "ok", "plan": PLAN, "model": MODEL_NAME, "model_ready": _session is not None,
-        "max_side": MAX_SIDE, "max_layers": MAX_LAYERS,
-    }
-
-
-def has_real_transparency(img_rgba: Image.Image) -> bool:
-    """अगर इमेज पहले से कटी हुई (transparent PNG) है तो दोबारा बैकग्राउंड हटाने की ज़रूरत नहीं."""
-    alpha = np.array(img_rgba.getchannel("A"))
-    return float((alpha < 250).mean()) > 0.01
-
-
-def split_cutout(cutout: Image.Image, max_layers: int = None, min_pct: float = 0.2):
-    """कटी हुई इमेज (RGBA) से हर अलग हिस्से की पूरे-साइज़ वाली PNG बनाकर लौटाता है.
-    max_layers: कितने हिस्से तक (0/None = प्लान वाली सीमा). min_pct: इमेज के कितने % से छोटे टुकड़े कचरा माने जाएँ."""
-    limit = MAX_LAYERS if max_layers is None else max_layers
-    if limit <= 0:
-        limit = HARD_MAX_LAYERS
-    limit = min(limit, HARD_MAX_LAYERS)
-    img_np = np.array(cutout.convert("RGBA"))
-    h, w = img_np.shape[:2]
-    alpha = img_np[:, :, 3]
-    _, mask = cv2.threshold(alpha, 10, 255, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    min_area = max(100, int((min_pct / 100.0) * w * h))  # बहुत छोटे कचरे हटाओ
-    big = [c for c in contours if cv2.contourArea(c) >= min_area]
-    if not big and contours:
-        big = [max(contours, key=cv2.contourArea)]  # कुछ भी न बचे तो सबसे बड़ा हिस्सा रखो
-    big = sorted(big, key=cv2.contourArea, reverse=True)[:limit]
-
-    layers = []
-    for cnt in big:
-        layer_mask = np.zeros((h, w), dtype=np.uint8)
-        cv2.drawContours(layer_mask, [cnt], -1, 255, thickness=cv2.FILLED)
-        result = img_np.copy()
-        result[layer_mask == 0] = 0   # इस हिस्से के बाहर सब पारदर्शी
-        buf = io.BytesIO()
-        Image.fromarray(result).save(buf, format="PNG")
-        layers.append(base64.b64encode(buf.getvalue()).decode("utf-8"))
-        del layer_mask, result
-    return layers, w, h
-
-
-# async नहीं, साधारण def: भारी काम अलग थ्रेड में चलता है, इसलिए /health तुरंत जवाब देता रहता है
-@app.post("/split-layers")
-def split_layers(
-    file: UploadFile = File(...),
-    max_layers: Optional[int] = None,   # वैकल्पिक: लिंक के अंत में ?max_layers=30
-    max_side: Optional[int] = None,     # वैकल्पिक: ?max_side=2000
-    min_pct: float = 0.2,               # वैकल्पिक: ?min_pct=0.05 (और छोटे टुकड़े भी रखने के लिए)
-):
-    t0 = time.time()
-    try:
-        side = MAX_SIDE if not max_side else max(256, min(int(max_side), HARD_MAX_SIDE))
-        contents = file.file.read()
-        with _work_lock:
-            img = Image.open(io.BytesIO(contents))
-            img = ImageOps.exif_transpose(img).convert("RGBA")
-            if max(img.size) > side:
-                img.thumbnail((side, side), Image.LANCZOS)
-
-            # 1. बैकग्राउंड हटाएं (पहले से कटी हो तो छोड़ दें)
-            if has_real_transparency(img):
-                cutout = img
-            else:
-                from rembg import remove
-                cutout = remove(img, session=get_session())
-
-            # 2. OpenCV से हर हिस्से को अलग करें
-            layers, w, h = split_cutout(cutout, max_layers, min_pct)
-
-            del img, cutout
-            gc.collect()
-
-        print(f"[sam] {len(layers)} लेयर्स, {w}x{h}, {time.time() - t0:.1f}s", flush=True)
-        return JSONResponse({
-            "success": True,
-            "total_layers": len(layers),
-            "layers": layers,
-            "width": w,
-            "height": h,
-        })
-    except Exception as e:
-        gc.collect()
-        print(f"[sam] ERROR: {e}", flush=True)
-        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
-
-
-if __name__ == "__main__":
-    # Render द्वारा दिया गया पोर्ट लें, नहीं तो 10000 इस्तेमाल करें
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+# Render के PORT पर चलाएँ
+CMD ["sh", "-c", "uvicorn sam_server:app --host 0.0.0.0 --port ${PORT:-10000}"]
