@@ -130,6 +130,41 @@
     <label>आउटलाइन का रंग</label><input type="color" id="tOutlineColor" />
   </div>
 
+  <div class="panel" id="cardPanel">
+    <h3>💌 कार्ड बनाएँ (अपने आप 5 लेआउट)</h3>
+    <label>कार्ड का प्रकार</label>
+    <select id="cType">
+      <option value="wedding">💌 शादी कार्ड</option>
+      <option value="visiting">💼 विज़िटिंग कार्ड</option>
+    </select>
+    <div id="cFields"></div>
+    <div class="row">
+      <div><label>रंग थीम</label>
+        <select id="cTheme">
+          <option value="gold">सुनहरा (हल्के बैकग्राउंड पर)</option>
+          <option value="red">लाल</option>
+          <option value="navy">नीला</option>
+          <option value="black">काला</option>
+          <option value="white">सफेद (गहरे बैकग्राउंड पर)</option>
+          <option value="lightgold">चमकीला सुनहरा (गहरे बैकग्राउंड पर)</option>
+        </select>
+      </div>
+      <div><label>फॉन्ट स्टाइल</label>
+        <select id="cFont">
+          <option value="classic">क्लासिक</option>
+          <option value="bold">मोटा</option>
+          <option value="plain">सादा</option>
+          <option value="fun">मज़ेदार</option>
+        </select>
+      </div>
+    </div>
+    <label>लेआउट चुनें (5 में से)</label>
+    <div class="chips" id="cLayouts"></div>
+    <button class="purple full" id="cApply">✨ कार्ड पर लगाएँ</button>
+    <button class="full" id="cRandom">🎲 अपने आप नया कॉम्बिनेशन</button>
+    <p class="hint">जो खाना खाली छोड़ेंगे वह कार्ड पर नहीं आएगा। बैकग्राउंड ऊपर वाले पैनल से बदलें, और हर लाइन को खींचकर हिला सकते हैं।</p>
+  </div>
+
   <div class="panel">
     <button class="primary full" id="bDownload">⬇️ डाउनलोड PNG (300 DPI, पूरा साइज़)</button>
     <button class="full" id="bShare">🔗 मेरे बदलाव का नया लिंक बनाएँ (भेजने के लिए)</button>
@@ -172,7 +207,8 @@
       bold: !!t.bold, italic: !!t.italic, font: t.font || 'Arial, sans-serif',
       angle: isFinite(t.angle) ? +t.angle : 0, effect3d: !!t.effect3d,
       depth: isFinite(t.depth) ? +t.depth : 12, extrude: t.extrude || '#8a6d00',
-      outline: !!t.outline, outlineColor: t.outlineColor || '#000000'
+      outline: !!t.outline, outlineColor: t.outlineColor || '#000000',
+      maxW: isFinite(t.maxW) ? +t.maxW : 0, align: (t.align === 'left' || t.align === 'right') ? t.align : 'center'
     };
   }
   function makeItem(o, img) {
@@ -192,41 +228,62 @@
     ctx.drawImage(it.img, -w / 2, -h / 2, w, h);
     ctx.restore();
   }
+  function fontOf(t, fs) { return (t.italic ? 'italic ' : '') + (t.bold ? 'bold ' : '') + fs + 'px ' + t.font; }
+  function linesOf(t, fs) {
+    ctx.save(); ctx.font = fontOf(t, fs);
+    var maxPx = t.maxW ? t.maxW * canvas.width : 0, out = [];
+    String(t.text).split('\n').forEach(function (para) {
+      if (!maxPx) { out.push(para); return; }
+      var cur = '';
+      para.split(/\s+/).forEach(function (w) {
+        var test = cur ? cur + ' ' + w : w;
+        if (cur && ctx.measureText(test).width > maxPx) { out.push(cur); cur = w; } else cur = test;
+      });
+      out.push(cur);
+    });
+    ctx.restore();
+    return out;
+  }
   function drawText(t) {
     if (!t.text) return;
     var W = canvas.width, H = canvas.height, fs = Math.max(4, t.sizeFrac * W);
+    var lines = linesOf(t, fs), lh = fs * 1.25;
     ctx.save();
     ctx.translate(t.x / 100 * W, t.y / 100 * H);
     ctx.rotate(t.angle * Math.PI / 180);
-    ctx.font = (t.italic ? 'italic ' : '') + (t.bold ? 'bold ' : '') + fs + 'px ' + t.font;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    if (t.effect3d) {
-      var depth = Math.round(fs * t.depth / 100);
-      ctx.fillStyle = t.extrude;
-      for (var i = depth; i >= 1; i--) ctx.fillText(t.text, i * 0.7, i * 0.7);
-    }
-    if (t.outline) {
-      ctx.lineWidth = fs * 0.08; ctx.lineJoin = 'round'; ctx.strokeStyle = t.outlineColor;
-      ctx.strokeText(t.text, 0, 0);
-    }
-    ctx.fillStyle = t.color;
-    ctx.fillText(t.text, 0, 0);
+    ctx.font = fontOf(t, fs);
+    ctx.textAlign = t.align; ctx.textBaseline = 'middle';
+    var depth = t.effect3d ? Math.round(fs * t.depth / 100) : 0;
+    lines.forEach(function (ln, k) {
+      var oy = (k - (lines.length - 1) / 2) * lh;
+      if (depth) {
+        ctx.fillStyle = t.extrude;
+        for (var i = depth; i >= 1; i--) ctx.fillText(ln, i * 0.7, oy + i * 0.7);
+      }
+      if (t.outline) {
+        ctx.lineWidth = fs * 0.08; ctx.lineJoin = 'round'; ctx.strokeStyle = t.outlineColor;
+        ctx.strokeText(ln, 0, oy);
+      }
+      ctx.fillStyle = t.color;
+      ctx.fillText(ln, 0, oy);
+    });
     ctx.restore();
   }
   function textBox(t) {
     var fs = Math.max(4, t.sizeFrac * canvas.width);
-    ctx.save();
-    ctx.font = (t.italic ? 'italic ' : '') + (t.bold ? 'bold ' : '') + fs + 'px ' + t.font;
-    var w = ctx.measureText(t.text || ' ').width;
+    var lines = linesOf({ text: t.text || ' ', maxW: t.maxW, font: t.font, bold: t.bold, italic: t.italic }, fs);
+    ctx.save(); ctx.font = fontOf(t, fs);
+    var w = 0;
+    lines.forEach(function (ln) { w = Math.max(w, ctx.measureText(ln || ' ').width); });
     ctx.restore();
-    return { w: w + fs * 0.4, h: fs * 1.3 };
+    return { w: w + fs * 0.4, h: lines.length * fs * 1.25 + fs * 0.1, shift: t.align === 'left' ? w / 2 : (t.align === 'right' ? -w / 2 : 0) };
   }
-  function dashBox(cx, cy, angle, w, h) {
+  function dashBox(cx, cy, angle, w, h, shiftX) {
     var W = canvas.width;
     ctx.save();
     ctx.translate(cx, cy); ctx.rotate(angle * Math.PI / 180);
     ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = Math.max(2, W / 400); ctx.setLineDash([W / 100, W / 150]);
-    ctx.strokeRect(-w / 2, -h / 2, w, h);
+    ctx.strokeRect(-w / 2 + (shiftX || 0), -h / 2, w, h);
     ctx.restore();
   }
   function draw(forExport) {
@@ -242,7 +299,7 @@
       dashBox(it.cx / 100 * W, it.cy / 100 * H, it.angle, it.wFrac * W, itemH(it));
     } else if (sel.type === 't' && texts[tIdx] && texts[tIdx].text) {
       var t = texts[tIdx], b = textBox(t);
-      dashBox(t.x / 100 * W, t.y / 100 * H, t.angle, b.w, b.h);
+      dashBox(t.x / 100 * W, t.y / 100 * H, t.angle, b.w, b.h, b.shift);
     }
   }
 
@@ -348,7 +405,7 @@
       var b = textBox(t), cx = t.x / 100 * canvas.width, cy = t.y / 100 * canvas.height;
       var a = -t.angle * Math.PI / 180, dx = p.x - cx, dy = p.y - cy;
       var lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
-      if (Math.abs(lx) <= b.w / 2 && Math.abs(ly) <= b.h / 2) return i;
+      if (Math.abs(lx - b.shift) <= b.w / 2 && Math.abs(ly) <= b.h / 2) return i;
     }
     return -1;
   }
@@ -497,7 +554,7 @@
     try {
       msg('नया लिंक बन रहा है...');
       var body = {
-        title: P.title, W: P.W, H: P.H, bg: bgUrl, cut: items.length ? null : P.cut, final: P.final,
+        title: P.title, W: P.W, H: P.H, bg: bgUrl, cut: items.length ? null : P.cut, final: P.final, blank: !items.length,
         items: items.map(function (it) { return { url: it.url, cx: it.cx, cy: it.cy, wFrac: it.wFrac, angle: it.angle, flip: it.flip }; }),
         texts: texts.filter(function (t) { return t.text; }), useBgColor: useBgColor, bgColor: bgColor
       };
@@ -514,6 +571,132 @@
       if (navigator.share) { try { await navigator.share({ title: P.title, url: link }); } catch (e) {} }
       else if (navigator.clipboard) { try { await navigator.clipboard.writeText(link); } catch (e) {} }
     } catch (e) { msg('❌ ' + e.message, false); }
+  }
+
+  /* ---------- 💌 कार्ड बनाएँ (शादी / विज़िटिंग) - अपने आप 5 लेआउट ---------- */
+  // ---- कार्ड के लेआउट: हर लेआउट = कई "ब्लॉक". ब्लॉक के अंदर लाइनें ऊपर से नीचे अपने आप सजती हैं (टेक्स्ट कभी एक-दूसरे पर नहीं चढ़ता) ----
+  // ब्लॉक: { x%, align, anchor: 'top'|'bottom'|'middle', y%, items }   लाइन: [नाम-की, साइज़ (चौड़ाई का अनुपात), रंग 'p'/'s', {bold, maxW, gap}]
+  function blk(x, align, anchor, y, items) { return { x: x, align: align, anchor: anchor, y: y, items: items }; }
+  function cat(a, b, midGap) {
+    var r = a.map(function (i) { return i.slice(); });
+    if (midGap != null && r.length) { var last = r[r.length - 1]; last[3] = { bold: (last[3] || {}).bold, maxW: (last[3] || {}).maxW, gap: midGap }; }
+    return r.concat(b);
+  }
+  function wedHead(n, j) {
+    return [['header', 0.04, 's', { gap: 0.5 }], ['invite', 0.035, 's', { gap: 1.3 }], ['groom', n, 'p', { bold: true, gap: 0.15 }], ['join', j, 's', { gap: 0.15 }], ['bride', n, 'p', { bold: true }]];
+  }
+  var WED_INFO = [['date', 0.05, 'p', { bold: true, gap: 0.4 }], ['time', 0.04, 's', { gap: 0.5 }], ['venue', 0.04, 's', { maxW: 0.8, gap: 0.5 }], ['hosts', 0.035, 's', { maxW: 0.85, gap: 0.5 }], ['phone', 0.032, 's']];
+  var WEDDING = [
+    [blk(50, 'center', 'top', 4, wedHead(0.095, 0.045)), blk(50, 'center', 'bottom', 97, WED_INFO)],
+    [blk(50, 'center', 'top', 3, cat(wedHead(0.095, 0.045), WED_INFO, 1.8))],
+    [blk(50, 'center', 'bottom', 97, cat(wedHead(0.08, 0.04), WED_INFO, 1.5))],
+    [blk(50, 'center', 'middle', 50, cat(wedHead(0.095, 0.045), WED_INFO, 1.8))],
+    [blk(50, 'center', 'top', 3, wedHead(0.125, 0.05)), blk(50, 'center', 'bottom', 97, WED_INFO)]
+  ];
+  var V_ID = [['name', 0.075, 'p', { bold: true, gap: 0.3 }], ['title', 0.035, 's', { gap: 0.4 }], ['company', 0.04, 'p', { bold: true }]];
+  function vCt(w) { return [['phone', 0.03, 's', { gap: 0.3 }], ['email', 0.03, 's', { gap: 0.3 }], ['address', 0.028, 's', { maxW: w, gap: 0.3 }], ['website', 0.028, 's']]; }
+  var VISITING = [
+    [blk(50, 'center', 'middle', 50, cat(V_ID, vCt(0.85), 1.2))],
+    [blk(8, 'left', 'top', 10, V_ID), blk(8, 'left', 'bottom', 92, vCt(0.6))],
+    [blk(92, 'right', 'top', 10, V_ID), blk(92, 'right', 'bottom', 92, vCt(0.6))],
+    [blk(8, 'left', 'top', 10, [V_ID[0], V_ID[1]]), blk(92, 'right', 'bottom', 92, [['company', 0.04, 'p', { bold: true, maxW: 0.48, gap: 0.5 }], ['phone', 0.03, 's', { gap: 0.3 }], ['email', 0.03, 's']]),
+     blk(8, 'left', 'bottom', 92, [['address', 0.028, 's', { maxW: 0.36, gap: 0.3 }], ['website', 0.028, 's']])],
+    [blk(50, 'center', 'top', 8, V_ID), blk(50, 'center', 'bottom', 94, vCt(0.85))]
+  ];
+  // लेआउट + भरी हुई जानकारी → टेक्स्ट की सूची (हर लाइन की ऊँचाई नापकर, ताकि चढ़ाव न हो)
+  function stackLayout(layout, vals, theme, ff, W, H) {
+    var out = [];
+    layout.forEach(function (b) {
+      var rows = [];
+      b.items.forEach(function (it) {
+        var v = String(vals[it[0]] || '').trim();
+        if (!v) return;
+        var op = it[3] || {}, fs = Math.max(4, it[1] * W);
+        var tt = normText({ text: v, sizeFrac: it[1], color: it[2] === 'p' ? theme.p : theme.s, bold: !!op.bold, font: ff, align: b.align, maxW: op.maxW || 0 });
+        rows.push({ t: tt, h: linesOf(tt, fs).length * fs * 1.25, gap: (op.gap != null ? op.gap : 0.3) * fs });
+      });
+      if (!rows.length) return;
+      var total = 0;
+      rows.forEach(function (r, i) { total += r.h + (i < rows.length - 1 ? r.gap : 0); });
+      var top = b.anchor === 'bottom' ? b.y / 100 * H - total : (b.anchor === 'middle' ? b.y / 100 * H - total / 2 : b.y / 100 * H);
+      rows.forEach(function (r) {
+        r.t.x = b.x; r.t.y = (top + r.h / 2) / H * 100; r.t._card = true;
+        out.push(r.t);
+        top += r.h + r.gap;
+      });
+    });
+    return out;
+  }
+  var LAYOUT_NAMES = {
+    wedding: ['ऊपर नाम + नीचे जानकारी', 'सब ऊपर', 'सब नीचे', 'सब बीच में', 'बड़े नाम'],
+    visiting: ['बीच में', 'बायाँ', 'दायाँ', 'कोनों में', 'ऊपर नाम + नीचे संपर्क']
+  };
+  var CARD_FIELDS = {
+    wedding: [
+      ['header', 'शीर्षक / आशीर्वाद', '॥ श्री गणेशाय नमः ॥'], ['invite', 'निमंत्रण पंक्ति', 'आप सपरिवार सादर आमंत्रित हैं'],
+      ['groom', 'दूल्हे का नाम', 'जैसे: राहुल'], ['join', 'दोनों नामों के बीच', 'संग / weds / &'], ['bride', 'दुल्हन का नाम', 'जैसे: प्रिया'],
+      ['date', 'विवाह की तारीख', 'जैसे: 25 नवंबर 2026'], ['time', 'समय', 'जैसे: शाम 7:00 बजे'],
+      ['venue', 'स्थान / पता', 'जैसे: रॉयल पैलेस, जयपुर'], ['hosts', 'निवेदक (परिवार)', 'जैसे: श्री ... एवं परिवार'], ['phone', 'फोन', 'जैसे: 98XXXXXXXX']
+    ],
+    visiting: [
+      ['name', 'नाम', 'जैसे: राहुल शर्मा'], ['title', 'पद', 'जैसे: मैनेजर'], ['company', 'कंपनी / दुकान', 'जैसे: शर्मा इंटरप्राइजेज'],
+      ['phone', 'फोन', 'जैसे: 98XXXXXXXX'], ['email', 'ईमेल', 'जैसे: name@mail.com'], ['address', 'पता', 'जैसे: मेन मार्केट, जयपुर'], ['website', 'वेबसाइट', 'जैसे: www.site.com']
+    ]
+  };
+  var cardVals = { wedding: { header: '॥ श्री गणेशाय नमः ॥', invite: 'आप सपरिवार सादर आमंत्रित हैं', join: 'संग' }, visiting: {} };
+  var THEMES = {
+    gold: { p: '#8a5a00', s: '#5b4a1a' }, red: { p: '#8b0000', s: '#4a1010' }, navy: { p: '#0b2a5b', s: '#334155' },
+    black: { p: '#111111', s: '#444444' }, white: { p: '#ffffff', s: '#f1e6c9' }, lightgold: { p: '#f5c542', s: '#fff3c4' }
+  };
+  var FONTS = {
+    classic: "Georgia, 'Times New Roman', serif", bold: "'Impact', sans-serif", plain: 'Arial, sans-serif', fun: "'Comic Sans MS', cursive"
+  };
+  var cardLayout = 0;
+
+  function renderCardFields() {
+    var type = $('cType').value, box = $('cFields');
+    box.innerHTML = '';
+    CARD_FIELDS[type].forEach(function (f) {
+      var lab = document.createElement('label'); lab.textContent = f[1];
+      var inp = document.createElement('input'); inp.type = 'text'; inp.placeholder = f[2]; inp.value = cardVals[type][f[0]] || '';
+      inp.oninput = function () { cardVals[type][f[0]] = this.value; applyCard(); };
+      box.appendChild(lab); box.appendChild(inp);
+    });
+    var ch = $('cLayouts'); ch.innerHTML = '';
+    LAYOUT_NAMES[type].forEach(function (nm, i) {
+      var b = document.createElement('button'); b.textContent = (i + 1) + '. ' + nm; b.style.minHeight = '0';
+      if (i === cardLayout) b.className = 'on';
+      b.onclick = function () { cardLayout = i; renderCardFields(); applyCard(); };
+      ch.appendChild(b);
+    });
+  }
+  function applyCard() {
+    var type = $('cType').value;
+    var theme = THEMES[$('cTheme').value] || THEMES.gold, ff = FONTS[$('cFont').value] || FONTS.classic;
+    var layout = (type === 'wedding' ? WEDDING : VISITING)[cardLayout % 5];
+    texts = texts.filter(function (t) { return !t._card; });
+    texts = texts.concat(stackLayout(layout, cardVals[type], theme, ff, canvas.width, canvas.height));
+    if (!texts.length) texts.push(normText({ text: '', x: 50, y: 15, sizeFrac: 0.1 }));
+    tIdx = Math.min(tIdx, texts.length - 1);
+    syncText(); draw();
+  }
+  function bindCard() {
+    $('cType').onchange = function () { cardLayout = 0; renderCardFields(); applyCard(); };
+    $('cTheme').onchange = applyCard;
+    $('cFont').onchange = applyCard;
+    $('cApply').onclick = function () { applyCard(); msg('✅ कार्ड पर लग गया। रंग/फॉन्ट/लेआउट बदलकर देखें, हर टेक्स्ट को खींचकर हिला भी सकते हैं।'); };
+    $('cRandom').onclick = function () {
+      var tk = Object.keys(THEMES), fk = Object.keys(FONTS);
+      $('cTheme').value = tk[Math.floor(Math.random() * tk.length)];
+      $('cFont').value = fk[Math.floor(Math.random() * fk.length)];
+      cardLayout = Math.floor(Math.random() * 5);
+      renderCardFields(); applyCard();
+    };
+    var m = (location.hash || '').match(/card=(wedding|visiting)/);
+    if (m) { $('cType').value = m[1]; }
+    renderCardFields();
+    if (m) applyCard();   // सिर्फ तब, जब कार्ड बनाने वाले बटन से खोला हो (वरना बाकी डिज़ाइन में अपने आप टेक्स्ट न जुड़े)
+    if (m) { setTimeout(function () { try { $('cardPanel').scrollIntoView(); } catch (e) {} }, 300); }
   }
 
   /* ---------- शुरुआत ---------- */
@@ -537,7 +720,7 @@
       useBgColor = !!P.useBgColor || !P.bg; bgColor = P.bgColor || '#ffffff';
       // सिर्फ एक कटआउट-लेयर हो तो उसे "पार्ट" की तरह दिखाने की ज़रूरत नहीं (पूरा कैनवस-साइज़ है)
       sel = { type: items.length > 1 ? 'i' : 't', idx: -1 };
-      bind(); syncItems(); syncText(); draw();
+      bind(); bindCard(); syncItems(); syncText(); draw();
     } catch (e) {
       var m = document.querySelector('main'); m.innerHTML = '';
       var p = document.createElement('p'); p.style.cssText = 'padding:20px;color:#fca5a5;';
@@ -549,4 +732,3 @@
 </script>
 </body>
 </html>
-
