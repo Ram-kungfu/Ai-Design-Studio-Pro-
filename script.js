@@ -66,6 +66,11 @@ function escapeHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+// 🔥 "सिर्फ यह पार्ट अलग करें (कस्टम कटिंग)" बॉक्स में जो लिखा है (खाली = पहले जैसा पूरा कटेगा)
+function getCutPart() {
+  return ($('customCutText') ? $('customCutText').value : '').trim();
+}
+
 // 🔥 कस्टम साइज़: px / इंच / सेमी - इंच और सेमी को 300 DPI पर पिक्सल में बदलता है (प्रिंट के लिए)
 function getCustomSize() {
   const unit = $('customUnit') ? $('customUnit').value : 'px';
@@ -530,7 +535,7 @@ function createThumbCard(wmUrl, rawUrl, pdfUrl, label, isVector = false) {
 
   div.innerHTML = `
     <a href="${wmUrl}" target="_blank"><img src="${wmUrl}" /></a>
-    <p>${label}</p>
+    <p>${escapeHtml(label)}</p>
     ${buttonsHtml}
   `;
   return div;
@@ -655,21 +660,22 @@ async function runAuto() {
 }
 
 // ==========================================
-// 2. SPLIT + TRACE (SAM + Vector) - 🔥 100% फिक्स
+// 2. SPLIT + TRACE (SAM + Vector)
+//    ऊपर के बॉक्स में कुछ लिखा हो तो सिर्फ वही हिस्सा अलग होगा और सिर्फ उसी का वेक्टर बनेगा
 // ==========================================
 async function runSplitAndTrace() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
+  const partText = getCutPart();
   clearGrid(); setStatus('SAM लेयर्स को अलग कर रहा है...'); toggleButtons(true);
   const fd = new FormData(); fd.append('image', currentFile);
-  
-  // 🔥 कस्टम कटिंग टेक्स्ट सर्वर के 'name' फील्ड में भेज रहे हैं (सिर्फ नाम काटने के लिए)
-  if ($('customCutText') && $('customCutText').value.trim() !== '') {
-    fd.append('name', $('customCutText').value);
-  }
+  if ($('cutModeSelect')) fd.append('cutMode', $('cutModeSelect').value);
+
+  // 🔥 कस्टम कटिंग: जो हिस्सा लिखा है सिर्फ वही अलग होगा (खाली = पहले जैसा पूरा)
+  if (partText) fd.append('part', partText);
 
   try {
     await wakeSamServer(msg => setStatus(msg));
-    setStatus('SAM लेयर्स को अलग कर रहा है... (कुछ मिनट लग सकते हैं, पेज खुला रखें)');
+    setStatus(partText ? `सिर्फ "${escapeHtml(partText)}" अलग हो रहा है... (कुछ मिनट लग सकते हैं, पेज खुला रखें)` : 'SAM लेयर्स को अलग कर रहा है... (कुछ मिनट लग सकते हैं, पेज खुला रखें)');
     const r = await fetchWithRetry('/api/split-and-trace', { method: 'POST', body: fd });
     const data = await readJson(r);
     if (data.error) throw new Error(data.error);
@@ -677,13 +683,13 @@ async function runSplitAndTrace() {
     const grid = $('layerResults');
     if (data.results) {
         data.results.forEach(res => {
-          grid.appendChild(createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, `लेयर ${res.layerNumber}`, true));
+          grid.appendChild(createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, res.label || `लेयर ${res.layerNumber}`, true));
         });
-        // 🔥 एडिटर बटन के लिए डेटा सुरक्षित तरीके से भेजना
-        addPartsEditorCard(createSafeEditorData(data.results)); 
+        // 🔥 एडिटर बटन: सर्वर से आई सही जगह (x,y,w,h) के साथ
+        addPartsEditorCard(data.editorParts || createSafeEditorData(data.results)); 
     }
 
-    setStatus('✅ लेयर्स तैयार!', 'ok');
+    setStatus(partText ? '✅ चुना हुआ हिस्सा अलग हो गया (बाकी हिस्सा जैसा था वैसा अलग कार्ड में)' : '✅ लेयर्स तैयार!', 'ok');
   } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
 }
 
@@ -757,28 +763,33 @@ async function runVector() {
 
 // ==========================================
 // 5. CUTOUT ONLY
+//    ऊपर के बॉक्स में कुछ लिखा हो तो सिर्फ वही हिस्सा कटेगा (और बाकी हिस्सा अलग कार्ड में, जैसा था वैसा)
 // ==========================================
 async function runCutout() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('कटिंग हो रही है...'); toggleButtons(true);
+  const partText = getCutPart();
+  clearGrid(); setStatus(partText ? `सिर्फ "${escapeHtml(partText)}" काटा जा रहा है...` : 'कटिंग हो रही है...'); toggleButtons(true);
   const fd = new FormData(); 
   fd.append('image', currentFile); 
   if($('cutModeSelect')) fd.append('cutMode', $('cutModeSelect').value);
   
-  // 🔥 कस्टम टेक्स्ट यहाँ भी भेजा जा रहा है
-  if ($('customCutText') && $('customCutText').value.trim() !== '') {
-    fd.append('name', $('customCutText').value);
-  }
+  // 🔥 कस्टम कटिंग: जो हिस्सा लिखा है सिर्फ वही कटेगा (खाली = पहले जैसा पूरा)
+  if (partText) fd.append('part', partText);
 
   try {
     const r = await fetch('/api/cutout', { method: 'POST', body: fd });
     const d = await r.json();
     if (d.error) throw new Error(d.error);
     
-    const div = createThumbCard(d.preview, d.finalRaw, null, '✂️ कटिंग', false);
+    const div = createThumbCard(d.preview, d.finalRaw, null, partText ? '✂️ सिर्फ चुना हुआ हिस्सा' : '✂️ कटिंग', false);
     $('resultGrid').appendChild(div);
+
+    // बाकी हिस्सा (जैसा था वैसा) - सिर्फ तब जब कोई हिस्सा लिखकर काटा हो
+    if (d.restRaw) {
+      $('resultGrid').appendChild(createThumbCard(d.restRaw, d.restRaw, null, '🧩 बाकी हिस्सा (जैसा था)', false));
+    }
     
-    addPartsEditorCard(createSafeEditorData([{ url: d.finalRaw }]));
+    addPartsEditorCard(d.editorParts || createSafeEditorData([{ url: d.finalRaw }]));
 
     setStatus('✅ हो गया', 'ok');
   } catch (e) {
@@ -789,21 +800,21 @@ async function runCutout() {
 }
 
 // ==========================================
-// 🔥 6. DIRECT VECTOR (सीधा कट + वेक्टर) - 🔥 100% फिक्स
+// 🔥 6. DIRECT VECTOR (सीधा कट + वेक्टर)
+//    ऊपर के बॉक्स में कुछ लिखा हो तो सिर्फ वही हिस्सा कटेगा और सिर्फ उसी का वेक्टर बनेगा
 // ==========================================
 async function runDirectVector() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('सीधा कट + वेक्टर बन रहा है...'); toggleButtons(true);
+  const partText = getCutPart();
+  clearGrid(); setStatus(partText ? `सिर्फ "${escapeHtml(partText)}" कट + वेक्टर हो रहा है...` : 'सीधा कट + वेक्टर बन रहा है...'); toggleButtons(true);
   const fd = new FormData(); 
   fd.append('image', currentFile);
   
   try {
     if($('cutModeSelect')) fd.append('cutMode', $('cutModeSelect').value);
     
-    // 🔥 कस्टम टेक्स्ट सर्वर के 'name' फील्ड में भेज रहे हैं (सिर्फ नाम काटने के लिए)
-    if ($('customCutText') && $('customCutText').value.trim() !== '') {
-      fd.append('name', $('customCutText').value);
-    }
+    // 🔥 कस्टम कटिंग: जो हिस्सा लिखा है सिर्फ वही कटेगा (खाली = पहले जैसा पूरा)
+    if (partText) fd.append('part', partText);
 
     const r = await fetchWithRetry('/api/direct-vector', { method: 'POST', body: fd });
     const data = await readJson(r);
@@ -812,10 +823,10 @@ async function runDirectVector() {
     const grid = $('layerResults');
     if(data.results) {
         data.results.forEach(res => {
-          grid.appendChild(createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, 'कट + वेक्टर', true));
+          grid.appendChild(createThumbCard(res.previewPng, res.rawPng, res.vectorPdf, res.label || 'कट + वेक्टर', true));
         });
-        // 🔥 एडिटर बटन (सही तरीके से कॉल किया गया)
-        addPartsEditorCard(createSafeEditorData(data.results));
+        // 🔥 एडिटर बटन: सर्वर से आई सही जगह (x,y,w,h) के साथ
+        addPartsEditorCard(data.editorParts || createSafeEditorData(data.results));
     }
 
     setStatus('✅ कट + वेक्टर तैयार!', 'ok');
@@ -992,9 +1003,14 @@ function addPartsEditorCard(data) {
   $('resultGrid').appendChild(div);
 }
 
+// ==========================================
+// 8. अलग-अलग पार्ट्स
+//    ऊपर के बॉक्स में कुछ लिखा हो तो सिर्फ वही हिस्सा अलग होगा (और बाकी हिस्सा जैसा था वैसा अलग पार्ट में)
+// ==========================================
 async function runSplitParts() {
   if (!currentFile) return alert('फ़ोटो अपलोड करें');
-  clearGrid(); setStatus('कटिंग होकर पार्ट्स बन रहे हैं (1-2 मिनट लग सकते हैं)...'); toggleButtons(true);
+  const partText = getCutPart();
+  clearGrid(); setStatus(partText ? `सिर्फ "${escapeHtml(partText)}" अलग हो रहा है...` : 'कटिंग होकर पार्ट्स बन रहे हैं (1-2 मिनट लग सकते हैं)...'); toggleButtons(true);
 
   const fd = new FormData();
   fd.append('image', currentFile);
@@ -1002,10 +1018,8 @@ async function runSplitParts() {
   fd.append('hd', ($('splitHd') && $('splitHd').checked) ? 'true' : 'false');
   if($('splitGap')) fd.append('gap', $('splitGap').value);
 
-  // 🔥 अलग-अलग पार्ट्स में भी कस्टम टेक्स्ट काम करेगा
-  if ($('customCutText') && $('customCutText').value.trim() !== '') {
-    fd.append('name', $('customCutText').value);
-  }
+  // 🔥 कस्टम कटिंग: जो हिस्सा लिखा है सिर्फ वही अलग होगा (खाली = पहले जैसा पूरा)
+  if (partText) fd.append('part', partText);
 
   try {
     const r = await fetch('/api/split-parts', { method: 'POST', body: fd });
@@ -1017,13 +1031,12 @@ async function runSplitParts() {
       return;
     }
 
-    // 🔥 अलग-अलग पार्ट्स में एडिटर बटन ठीक से जोड़ दिया गया है
     addPartsEditorCard(data);
     $('resultGrid').appendChild(createThumbCard(data.cutUrl, data.cutUrl, null, '✂️ पूरी कटी हुई डिज़ाइन', false));
     data.parts.forEach((p, i) => {
-      $('resultGrid').appendChild(createThumbCard(p.url, p.url, null, `🧩 पार्ट ${i + 1}`, false));
+      $('resultGrid').appendChild(createThumbCard(p.url, p.url, null, p.label || `🧩 पार्ट ${i + 1}`, false));
     });
-    setStatus(`✅ ${data.parts.length} पार्ट तैयार (${data.found || data.parts.length} टुकड़े मिले)`, 'ok');
+    setStatus(partText ? `✅ चुना हुआ हिस्सा अलग हो गया (${data.parts.length} पार्ट)` : `✅ ${data.parts.length} पार्ट तैयार (${data.found || data.parts.length} टुकड़े मिले)`, 'ok');
   } catch (e) {
     setStatus('❌ ' + e.message, 'err');
   } finally {
@@ -1031,9 +1044,73 @@ async function runSplitParts() {
   }
 }
 
+// ==========================================
+// 💌 शादी कार्ड / विज़िटिंग कार्ड बनाने के बटन
+//    (एडिटर में कार्ड वाला पैनल खुलता है: जानकारी भरो → 5 लेआउट अपने आप)
+// ==========================================
+const CARD_SIZES = { wedding: [1500, 2100], visiting: [1050, 600] };
+
+async function openBlankCardEditor(type, btn) {
+  // नई विंडो क्लिक के भीतर ही खोलनी पड़ती है, वरना फोन का ब्राउज़र रोक देता है
+  const w = window.open('', '_blank');
+  if (w) {
+    try {
+      w.document.body.style.cssText = 'background:#0b1220;color:#e5e7eb;font-family:Arial,sans-serif;padding:24px;';
+      w.document.body.textContent = '⏳ कार्ड एडिटर बन रहा है...';
+    } catch (e) {}
+  }
+  const oldText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ बन रहा है...'; }
+  try {
+    const size = CARD_SIZES[type] || CARD_SIZES.wedding;
+    const r = await fetch('/api/project', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: type === 'wedding' ? 'शादी कार्ड' : 'विज़िटिंग कार्ड',
+        W: size[0], H: size[1], items: [], blank: true, texts: [], useBgColor: true, bgColor: '#ffffff'
+      })
+    });
+    const d = await readJson(r);
+    if (d.error) throw new Error(d.error);
+    const link = location.origin + d.url + '#card=' + type;
+    if (w && !w.closed) {
+      w.location.href = link;
+    } else {
+      setStatus(`✅ कार्ड एडिटर तैयार: <a href="${link}" target="_blank" rel="noopener" style="color:#fbbf24;">👉 यहाँ दबाकर खोलें</a>`, 'ok');
+    }
+  } catch (e) {
+    if (w) { try { w.close(); } catch (err) {} }
+    setStatus('❌ ' + e.message, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = oldText; }
+  }
+}
+
+function ensureCardLauncher() {
+  if ($('cardLauncher')) return;
+  const tabs = document.querySelector('.tabs');
+  if (!tabs || !tabs.parentNode) return;
+  const box = document.createElement('div');
+  box.id = 'cardLauncher';
+  box.style.cssText = 'margin-bottom:12px; padding:10px; background:#0f172a; border:1px dashed #475569; border-radius:10px;';
+  box.innerHTML = `
+    <div style="color:#fbbf24; font-weight:bold; margin-bottom:8px;">💌 कार्ड बनाएँ (जानकारी भरो, 5 लेआउट अपने आप)</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+      <button class="btn small" data-card="wedding" style="background:#8b5cf6; color:#fff;">💌 शादी कार्ड</button>
+      <button class="btn small" data-card="visiting" style="background:#0ea5e9; color:#fff;">💼 विज़िटिंग कार्ड</button>
+    </div>
+  `;
+  tabs.parentNode.insertBefore(box, tabs);
+  box.querySelectorAll('button[data-card]').forEach(b => {
+    b.addEventListener('click', () => openBlankCardEditor(b.getAttribute('data-card'), b));
+  });
+}
+
 // पेज लोड होते ही एडिटर अपडेट करें
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', updateEditorText);
+    document.addEventListener('DOMContentLoaded', () => { updateEditorText(); ensureCardLauncher(); });
 } else {
     updateEditorText();
-                                                    }
+    ensureCardLauncher();
+}
