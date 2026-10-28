@@ -413,12 +413,198 @@ async function splitIntoParts(cutBuf, opts = {}) {
   return { parts, W, H, found: comps.length };
 }
 
+// ================= 🔎 "सिर्फ यही हिस्सा अलग करो" - हिस्से का नाम लिखकर (Gemini Vision से जगह ढूँढना) =================
+// उदाहरण: "फूल", "heart", "butterfly", "नाम/text" (कॉमा लगाकर कई भी लिख सकते हैं). खाली छोड़ें तो पूरा पहले जैसा कटेगा.
+const GEMINI_VISION_MODELS = [process.env.GEMINI_VISION_MODEL, 'gemini-flash-latest', 'gemini-2.5-flash'].filter(Boolean);
+
+function parsePartList(s) {
+  return String(s || '').split(/[,;\n،|]+/).map(x => x.trim()).filter(Boolean).slice(0, 8);
+}
+
+// Gemini के जवाब (JSON) से बॉक्स निकालना. box_2d = [ymin, xmin, ymax, xmax], 0-1000 के पैमाने पर
+function parseBoxes(text) {
+  const t = String(text || '').replace(/```json|```/g, '').trim();
+  let arr;
+  try { arr = JSON.parse(t); }
+  catch (e) {
+    const m = t.match(/\[[\s\S]*\]/);
+    if (!m) return [];
+    try { arr = JSON.parse(m[0]); } catch (e2) { return []; }
+  }
+  if (!Array.isArray(arr)) arr = (arr && (arr.items || arr.boxes || arr.detections)) || [];
+  const clamp = n => Math.max(0, Math.min(1000, n)) / 1000;
+  const boxes = [];
+  for (const it of arr) {
+    const b = it && (it.box_2d || it.box);
+    if (!Array.isArray(b) || b.length !== 4) continue;
+    const v = b.map(Number);
+    if (v.some(n => !isFinite(n))) continue;
+    const y0 = clamp(v[0]), x0 = clamp(v[1]), y1 = clamp(v[2]), x1 = clamp(v[3]);
+    if (x1 - x0 < 0.01 || y1 - y0 < 0.01) continue;
+    boxes.push({ label: String(it.label || '').slice(0, 60), x0, y0, x1, y1 });
+  }
+  return boxes;
+}
+
+async function geminiDetectParts(origBuf, labels) {
+  if (!KEYS.GEMINI) throw new Error('GEMINI_KEY नहीं मिली - हिस्से का नाम पहचानने के लिए Gemini चाहिए');
+  const small = await sharp(origBuf).rotate().flatten({ background: '#ffffff' })
+    .resize({ width: 1024, height: 1024, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
+  const prompt = `This is a design / artwork image. The user typed (in Hindi or English) which part of the design they want to separate: ${labels.map(l => `"${l}"`).join(', ')}. ` +
+    `Treat each phrase as a description of an object or part in the image; ignore command words like "अलग करें", "काटें", "separate", "cut". ` +
+    `Return ONLY a JSON array. Each item: {"label": "<the part you found>", "box_2d": [ymin, xmin, ymax, xmax]} ` +
+    `with coordinates normalized to 0-1000. If a part appears several times, return one item per instance. ` +
+    `Do not include parts that are not in the image. If nothing matches, return [].`;
+  let lastErr = new Error('कोई Gemini मॉडल उपलब्ध नहीं');
+  for (const model of GEMINI_VISION_MODELS) {
+    try {
+      const r = await axios.post(`${GEM_URL}${model}:generateContent`, {
+        contents: [{ parts: [{ inline_data: { mime_type: 'image/jpeg', data: small.toString('base64') } }, { text: prompt }] }],
+        generationConfig: { responseMimeType: 'application/json', temperature: 0 }
+      }, { headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' }, timeout: 60000 });
+      const parts = (r.data && r.data.candidates && r.data.candidates[0] && r.data.candidates[0].content && r.data.candidates[0].content.parts) || [];
+      return parseBoxes(parts.map(p => p.text || '').join(''));
+    } catch (e) {
+      const detail = e.response && e.response.data ? JSON.stringify(e.response.data).slice(0, 300) : e.message;
+      console.error(`❌ Gemini Vision (${model}) फेल:`, detail);
+      lastErr = new Error(`${model}: ${detail}`);
+    }
+  }
+  throw new Error('Gemini से हिस्सा पहचान नहीं हो पाया: ' + lastErr.message);
+}
+
+// पारदर्शी हिस्सा काटकर, कहाँ से कटा (x, y) भी बताना
+async function trimWithOffset(buf) {
+  const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const w = info.width, h = info.height;
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w * 4;
+    for (let x = 0; x < w; x++) {
+      if (data[row + x * 4 + 3] > 8) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (maxX < 0) return null;
+  const pw = maxX - minX + 1, ph = maxY - minY + 1;
+  const out = (pw === w && ph === h) ? await sharp(buf).png().toBuffer()
+    : await sharp(buf).extract({ left: minX, top: minY, width: pw, height: ph }).png().toBuffer();
+  return { buf: out, x: minX, y: minY, w: pw, h: ph };
+}
+
+// बाकी हिस्से से चुने हुए टुकड़ों के पिक्सल पूरी तरह हटाना (किनारे की धार भी नहीं बचती)
+async function eraseContribs(baseBuf, W, H, contribs) {
+  const { data } = await sharp(baseBuf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  for (const c of contribs) {
+    const { data: cd, info } = await sharp(c.buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    for (let y = 0; y < info.height; y++) {
+      const by = y + c.top;
+      if (by < 0 || by >= H) continue;
+      for (let x = 0; x < info.width; x++) {
+        if (cd[(y * info.width + x) * 4 + 3] === 0) continue;
+        const bx = x + c.left;
+        if (bx < 0 || bx >= W) continue;
+        data[(by * W + bx) * 4 + 3] = 0;
+      }
+    }
+  }
+  return await sharp(data, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer();
+}
+
+// कौन-सा टुकड़ा किस बॉक्स में आता है (बॉक्स 0-1 के पैमाने पर, टुकड़े पिक्सल में)
+function selectPiecesByBoxes(pieces, boxes, W, H) {
+  const bpx = boxes.map((b, i) => ({ i, label: b.label, x0: b.x0 * W, y0: b.y0 * H, x1: b.x1 * W, y1: b.y1 * H }));
+  return pieces.map(p => {
+    const pa = p.w * p.h;
+    for (const b of bpx) {
+      const ix0 = Math.max(p.x, b.x0), iy0 = Math.max(p.y, b.y0);
+      const ix1 = Math.min(p.x + p.w, b.x1), iy1 = Math.min(p.y + p.h, b.y1);
+      if (ix1 <= ix0 || iy1 <= iy0) continue;
+      const inter = (ix1 - ix0) * (iy1 - iy0), ba = (b.x1 - b.x0) * (b.y1 - b.y0);
+      const ratioP = inter / pa, ratioB = inter / ba;
+      // टुकड़ा ज़्यादातर बॉक्स के अंदर → पूरा टुकड़ा चुना
+      if (ratioP >= 0.7) return { sel: true, crop: null, label: b.label, boxIndex: b.i };
+      // टुकड़ा बॉक्स से बड़ा है (कई चीज़ें आपस में जुड़ी हैं) → सिर्फ बॉक्स वाला हिस्सा काटो
+      if (ratioB >= 0.4 && pa > 1.25 * ba) {
+        return { sel: true, label: b.label, boxIndex: b.i,
+          crop: { x: Math.round(ix0), y: Math.round(iy0), w: Math.max(1, Math.round(ix1 - ix0)), h: Math.max(1, Math.round(iy1 - iy0)) } };
+      }
+      // बराबर साइज़ का टुकड़ा, आधा-ज़्यादा बॉक्स में → पूरा टुकड़ा
+      if (ratioP >= 0.5) return { sel: true, crop: null, label: b.label, boxIndex: b.i };
+    }
+    return { sel: false };
+  });
+}
+
+// चुने हुए हिस्से (हर बॉक्स का एक अलग हिस्सा) + बाकी हिस्सा (जैसा था वैसा)
+async function assemblePartResult(pieces, boxes, W, H, baseBuf) {
+  const sel = selectPiecesByBoxes(pieces, boxes, W, H);
+  const groups = new Map();
+  for (let i = 0; i < pieces.length; i++) {
+    const s = sel[i];
+    if (!s.sel) continue;
+    const p = pieces[i];
+    let contrib;
+    if (s.crop) {
+      const left = Math.max(0, s.crop.x - p.x), top = Math.max(0, s.crop.y - p.y);
+      const cw = Math.min(p.w - left, s.crop.w), ch = Math.min(p.h - top, s.crop.h);
+      if (cw < 1 || ch < 1) continue;
+      const sub = await sharp(p.buf).extract({ left, top, width: cw, height: ch }).png().toBuffer();
+      contrib = { buf: sub, left: p.x + left, top: p.y + top };
+    } else {
+      contrib = { buf: p.buf, left: p.x, top: p.y };
+    }
+    if (!groups.has(s.boxIndex)) groups.set(s.boxIndex, { label: s.label, list: [] });
+    groups.get(s.boxIndex).list.push(contrib);
+  }
+
+  const selected = [];
+  const erase = [];
+  for (const g of groups.values()) {
+    const union = await sharp(await blankCanvas(W, H))
+      .composite(g.list.map(c => ({ input: c.buf, left: c.left, top: c.top }))).png().toBuffer();
+    const t = await trimWithOffset(union);
+    if (t) selected.push({ buf: t.buf, x: t.x, y: t.y, w: t.w, h: t.h, label: g.label });
+    for (const c of g.list) erase.push({ buf: c.buf, left: c.left, top: c.top });
+  }
+
+  let restImg = baseBuf;
+  if (erase.length) restImg = await eraseContribs(baseBuf, W, H, erase);
+  const rest = await trimWithOffset(restImg);
+  return { selected, rest, W, H };
+}
+
+// सारे चुने हुए हिस्से एक ही इमेज में (जैसे "सिर्फ कटिंग" के लिए)
+async function unionSelected(selected, W, H) {
+  const u = await sharp(await blankCanvas(W, H))
+    .composite(selected.map(p => ({ input: p.buf, left: p.x, top: p.y }))).png().toBuffer();
+  return await trimWithOffset(u);
+}
+
+const NOT_FOUND_MSG = labels => `"${labels.join(', ')}" इमेज में नहीं मिला। दूसरा शब्द लिखकर देखें (अंग्रेज़ी में भी चलेगा), जैसे: flower, heart, butterfly, text`;
+
+// कटी हुई पूरी डिज़ाइन (cutBuf, बिना trim) से सिर्फ लिखा हुआ हिस्सा अलग करना
+async function extractNamedParts(origBuf, cutBuf, partText) {
+  const labels = parsePartList(partText);
+  const boxes = await geminiDetectParts(origBuf, labels);
+  if (!boxes.length) throw new Error(NOT_FOUND_MSG(labels));
+  const { parts: pieces, W, H } = await splitIntoParts(cutBuf, { gapPct: 0.4, minPct: 0.02, maxParts: 80 });
+  const base = await sharp(cutBuf).ensureAlpha().resize(W, H, { fit: 'fill' }).png().toBuffer();
+  const r = await assemblePartResult(pieces, boxes, W, H, base);
+  if (!r.selected.length) throw new Error(`"${labels.join(', ')}" की जगह मिली, पर कटी हुई डिज़ाइन में वहाँ कोई टुकड़ा नहीं मिला। कटिंग का तरीका बदलकर देखें।`);
+  return Object.assign({ found: boxes.length }, r);
+}
+
 // 🔥 स्मार्ट कटिंग: चुना हुआ तरीका → remove.bg फेल हो तो फ्री लोकल कटिंग → फिर भी न हो तो मूल इमेज
 // mode: auto | graphic | person | local
-async function smartCut(buf, mode = 'auto') {
+async function smartCut(buf, mode = 'auto', opts = {}) {
   // 'none' = फाइल पहले से कटी हुई (transparent PNG) है, कटिंग छोड़ दो
   if (mode === 'none') {
-    try { return await trimTransparent(await sharp(buf).ensureAlpha().png().toBuffer()); } catch (e) { return buf; }
+    try { const png = await sharp(buf).ensureAlpha().png().toBuffer(); return opts.trim === false ? png : await trimTransparent(png); } catch (e) { return buf; }
   }
   let out = null;
   if (mode !== 'local') {
@@ -438,7 +624,7 @@ async function smartCut(buf, mode = 'auto') {
     catch (e) { console.error('⚠️ लोकल कटिंग भी फेल:', e.message); }
   }
   if (!out) return buf;
-  return await trimTransparent(out);
+  return opts.trim === false ? out : await trimTransparent(out); // trim:false = फ्रेम वैसा ही (हिस्से की जगह पहचानने के लिए)
 }
 
 // Recraft - AI बैकग्राउंड/डिज़ाइन बनाना (वैकल्पिक)
@@ -833,33 +1019,88 @@ app.post('/api/auto', uploadWithName, async (req, res) => {
 });
 
 // 2. SPLIT + TRACE (Python SAM + Vectorizer)
+// SAM सर्वर न चले तो मुख्य ऐप के अंदर वाला फ्री तरीका अपने आप चलता है. "part" लिखा हो तो सिर्फ वही हिस्सा अलग + वेक्टर होता है.
 app.post('/api/split-and-trace', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
-    const rawLayers = await splitIntoLayersUsingPython(buf);
+    const partText = String(req.body.part || '').trim();
+    const cutMode = req.body.cutMode || 'auto';
 
-    if (rawLayers.length === 0) {
-      throw new Error("SAM कोई भी लेयर नहीं बना पाया।");
+    // 1) लेयर्स: पहले SAM सर्वर, न चले तो फ्री तरीका
+    let layers = null, FW = 0, FH = 0, usedSam = false;
+    try {
+      const raw = await splitIntoLayersUsingPython(buf);
+      if (raw.length > 0) {
+        const m = await sharp(raw[0]).metadata();
+        FW = m.width; FH = m.height; usedSam = true;
+        layers = raw.map(b => ({ buf: b, x: 0, y: 0, w: FW, h: FH, full: true }));
+      }
+    } catch (samErr) {
+      console.error('⚠️ SAM सर्वर नहीं चला → मुख्य ऐप वाला फ्री तरीका आज़मा रहे हैं:', samErr.message);
+    }
+    if (!layers) {
+      const cutFull = await smartCut(buf, cutMode, { trim: false });
+      const small = await sharp(cutFull).resize({ width: 1600, height: 1600, fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+      const sp = await splitIntoParts(small, { gapPct: 0.4, maxParts: 12 });
+      FW = sp.W; FH = sp.H;
+      layers = sp.parts.map(p => ({ buf: p.buf, x: p.x, y: p.y, w: p.w, h: p.h, full: false }));
+    }
+    if (layers.length === 0) {
+      throw new Error("कोई भी लेयर नहीं बन पाई।");
     }
 
     const results = [];
-    for (let i = 0; i < rawLayers.length; i++) {
-      const layerBuf = rawLayers[i];
-      const wmPng = await addWatermark(layerBuf);
+    const editorList = [];
+    const vectorize = async (b, name) => {
+      try { return saveOut(await callVectorizerAPI(b), name, 'pdf'); } catch (e) { return null; }
+    };
 
-      const previewPng = saveOut(wmPng, `layer_${i + 1}_wm`);
-      const rawPng = saveOut(layerBuf, `layer_${i + 1}_raw`);
+    if (partText) {
+      // 2अ) सिर्फ लिखा हुआ हिस्सा अलग (और सिर्फ उसी का वेक्टर); बाकी हिस्सा जैसा था वैसा
+      const pieces = [];
+      for (const l of layers) {
+        if (!l.full) { pieces.push(l); continue; }
+        const t = await trimWithOffset(l.buf);
+        if (t) pieces.push(t);
+      }
+      const labels = parsePartList(partText);
+      const boxes = await geminiDetectParts(buf, labels);
+      if (!boxes.length) throw new Error(NOT_FOUND_MSG(labels));
+      const base = await sharp(await blankCanvas(FW, FH))
+        .composite(pieces.map(p => ({ input: p.buf, left: p.x, top: p.y }))).png().toBuffer();
+      const r = await assemblePartResult(pieces, boxes, FW, FH, base);
+      if (!r.selected.length) throw new Error(`"${labels.join(', ')}" की जगह मिली, पर वहाँ कोई लेयर नहीं मिली।`);
 
-      let vectorPdf = null;
-      try {
-        const vectorBuf = await callVectorizerAPI(layerBuf);
-        vectorPdf = saveOut(vectorBuf, `vector_layer_${i + 1}`, 'pdf');
-      } catch (e) {}
+      for (let i = 0; i < r.selected.length; i++) {
+        const p = r.selected[i];
+        const previewPng = saveOut(await addWatermark(p.buf), `layer_part_${i + 1}_wm`);
+        const rawPng = saveOut(p.buf, `layer_part_${i + 1}_raw`);
+        const vectorPdf = await vectorize(p.buf, `vector_part_${i + 1}`);
+        results.push({ layerNumber: i + 1, previewPng, rawPng, vectorPdf, label: p.label ? `सिर्फ: ${p.label}` : `चुना हुआ हिस्सा ${i + 1}` });
+        editorList.push({ url: rawPng, x: p.x, y: p.y, w: p.w, h: p.h, label: p.label });
+      }
+      if (r.rest) {
+        const previewPng = saveOut(await addWatermark(r.rest.buf), 'layer_rest_wm');
+        const rawPng = saveOut(r.rest.buf, 'layer_rest_raw');
+        results.push({ layerNumber: results.length + 1, previewPng, rawPng, vectorPdf: null, label: 'बाकी हिस्सा (जैसा था)' });
+        editorList.push({ url: rawPng, x: r.rest.x, y: r.rest.y, w: r.rest.w, h: r.rest.h, label: 'बाकी हिस्सा' });
+      }
+    } else {
+      // 2ब) पहले जैसा: हर लेयर अलग + वेक्टर
+      for (let i = 0; i < layers.length; i++) {
+        const l = layers[i];
+        const wmPng = await addWatermark(l.buf);
 
-      results.push({ layerNumber: i + 1, previewPng, rawPng, vectorPdf });
+        const previewPng = saveOut(wmPng, `layer_${i + 1}_wm`);
+        const rawPng = saveOut(l.buf, `layer_${i + 1}_raw`);
+        const vectorPdf = await vectorize(l.buf, `vector_layer_${i + 1}`);
+
+        results.push({ layerNumber: i + 1, previewPng, rawPng, vectorPdf });
+        editorList.push({ url: rawPng, x: l.x, y: l.y, w: l.w, h: l.h });
+      }
     }
 
-    res.json({ success: true, total: results.length, results });
+    res.json({ success: true, total: results.length, usedSam, results, editorParts: { cw: FW, ch: FH, parts: editorList } });
   } catch (e) {
     res.status(500).json({ error: e.message });
   } finally {
@@ -872,6 +1113,24 @@ app.post('/api/cutout', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
     const cutMode = req.body.cutMode || (req.body.person === 'true' ? 'person' : 'auto');
+
+    // 🔎 हिस्से का नाम लिखा हो तो सिर्फ वही हिस्सा कटेगा (और बाकी हिस्सा अलग से, जैसा था वैसा)
+    const partText = String(req.body.part || '').trim();
+    if (partText) {
+      const cutFull = await smartCut(buf, cutMode, { trim: false });
+      const r = await extractNamedParts(buf, cutFull, partText);
+      const u = await unionSelected(r.selected, r.W, r.H);
+      const preview = saveOut(await addWatermark(u.buf), 'cutpart_wm');
+      const finalRaw = saveOut(await withDpi(u.buf), 'cutpart_raw');
+      const parts = r.selected.map((p, i) => ({ url: saveOut(p.buf, `part_${i + 1}`), x: p.x, y: p.y, w: p.w, h: p.h, label: p.label }));
+      let restRaw = null;
+      if (r.rest) {
+        restRaw = saveOut(await withDpi(r.rest.buf), 'cut_rest');
+        parts.push({ url: restRaw, x: r.rest.x, y: r.rest.y, w: r.rest.w, h: r.rest.h, label: 'बाकी हिस्सा' });
+      }
+      return res.json({ success: true, preview, finalRaw, restRaw, found: r.selected.length, editorParts: { cw: r.W, ch: r.H, parts } });
+    }
+
     const out = await smartCut(buf, cutMode);
 
     const preview = saveOut(await addWatermark(out), 'cut_wm');
@@ -1005,11 +1264,20 @@ app.post('/api/split-parts', upload.single('image'), async (req, res) => {
   try {
     const buf = fs.readFileSync(req.file.path);
     const { cutMode = 'auto', hd = 'false', gap = 'small' } = req.body;
+    const partText = String(req.body.part || '').trim(); // 🔎 सिर्फ यही हिस्सा अलग करो
 
-    let cut = await smartCut(buf, cutMode); // 'none' = पहले से कटी PNG
+    let cut = await smartCut(buf, cutMode, { trim: !partText }); // 'none' = पहले से कटी PNG
     if (hd === 'true') {
-      try { cut = await trimTransparent(await callHDUpscaleAPI(cut)); }
+      try { const up = await callHDUpscaleAPI(cut); cut = partText ? up : await trimTransparent(up); }
       catch (e) { console.error('HD फेल, बिना HD आगे बढ़ रहे हैं:', e.message); }
+    }
+
+    if (partText) {
+      const r = await extractNamedParts(buf, cut, partText);
+      const cutUrlP = saveOut(await withDpi(cut), 'cut_full');
+      const out = r.selected.map((p, i) => ({ url: saveOut(p.buf, `part_${i + 1}`), x: p.x, y: p.y, w: p.w, h: p.h, label: p.label ? `सिर्फ: ${p.label}` : `चुना हुआ हिस्सा ${i + 1}` }));
+      if (r.rest) out.push({ url: saveOut(r.rest.buf, 'part_rest'), x: r.rest.x, y: r.rest.y, w: r.rest.w, h: r.rest.h, label: 'बाकी हिस्सा (जैसा था)' });
+      return res.json({ success: true, cutUrl: cutUrlP, cw: r.W, ch: r.H, found: r.found, parts: out });
     }
 
     const gapMap = { none: 0, small: 0.4, medium: 1.2, large: 3 };
@@ -1151,6 +1419,28 @@ app.post('/api/direct-vector', upload.single('image'), async (req, res) => {
     const buf = fs.readFileSync(req.file.path);
     const results = [];
 
+    // 🔎 हिस्से का नाम लिखा हो तो सिर्फ वही हिस्सा कटेगा और सिर्फ उसी का वेक्टर बनेगा
+    const partText = String(req.body.part || '').trim();
+    if (partText) {
+      const cutFull = await smartCut(buf, req.body.cutMode || 'auto', { trim: false });
+      const r = await extractNamedParts(buf, cutFull, partText);
+      const u = await unionSelected(r.selected, r.W, r.H);
+      const wm = saveOut(await addWatermark(u.buf), 'layer_part_wm');
+      const raw = saveOut(await withDpi(u.buf), 'layer_part_raw');
+      let vec = null;
+      try { vec = saveOut(await callVectorizerAPI(u.buf), 'vector_part', 'pdf'); }
+      catch (e) { console.log('Vectorizer फेल हुआ:', e.message); }
+      results.push({ layerNumber: 1, previewPng: wm, rawPng: raw, vectorPdf: vec, label: 'सिर्फ चुना हुआ हिस्सा' });
+
+      const parts = r.selected.map((p, i) => ({ url: saveOut(p.buf, `part_${i + 1}`), x: p.x, y: p.y, w: p.w, h: p.h, label: p.label }));
+      if (r.rest) {
+        const rr = saveOut(await withDpi(r.rest.buf), 'layer_rest_raw');
+        results.push({ layerNumber: 2, previewPng: saveOut(await addWatermark(r.rest.buf), 'layer_rest_wm'), rawPng: rr, vectorPdf: null, label: 'बाकी हिस्सा (जैसा था)' });
+        parts.push({ url: rr, x: r.rest.x, y: r.rest.y, w: r.rest.w, h: r.rest.h, label: 'बाकी हिस्सा' });
+      }
+      return res.json({ success: true, total: results.length, results, editorParts: { cw: r.W, ch: r.H, parts } });
+    }
+
     let cutImage;
     try {
       cutImage = await smartCut(buf, req.body.cutMode || 'auto');
@@ -1226,11 +1516,11 @@ app.post('/api/project', (req, res) => {
       wFrac: okNum(i.wFrac, 0.3, 0.01, 3), angle: okNum(i.angle, 0, -360, 360), flip: !!i.flip
     }));
     const hasBg = okOutUrl(b.bg), hasCut = okOutUrl(b.cut);
-    if (!items.length && !hasCut) return res.status(400).json({ error: 'लेयर्स की जानकारी सही नहीं है' });
+    if (!items.length && !hasCut && !b.blank) return res.status(400).json({ error: 'लेयर्स की जानकारी सही नहीं है' });
     const W = parseInt(b.W), H = parseInt(b.H);
     if (!(W > 0 && H > 0 && W <= 8000 && H <= 8000)) return res.status(400).json({ error: 'साइज़ सही नहीं है' });
 
-    const texts = (Array.isArray(b.texts) ? b.texts : []).slice(0, 10).map(t => ({
+    const texts = (Array.isArray(b.texts) ? b.texts : []).slice(0, 30).map(t => ({
       text: String((t && t.text) || '').slice(0, 200),
       x: okNum(t && t.x, 50, -50, 150),
       y: okNum(t && t.y, 20, -50, 150),
@@ -1244,7 +1534,9 @@ app.post('/api/project', (req, res) => {
       depth: okNum(t && t.depth, 12, 0, 60),
       extrude: okHex(t && t.extrude, '#8a6d00'),
       outline: !!(t && t.outline),
-      outlineColor: okHex(t && t.outlineColor, '#000000')
+      outlineColor: okHex(t && t.outlineColor, '#000000'),
+      maxW: okNum(t && t.maxW, 0, 0, 1.5),
+      align: (t && (t.align === 'left' || t.align === 'right')) ? t.align : 'center'
     }));
 
     const id = nanoid(10);
