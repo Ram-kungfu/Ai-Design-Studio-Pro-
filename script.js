@@ -1135,7 +1135,11 @@ async function runAutoPanel() {
   } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
 }
 
-async function runAutoPanel() {
+
+// =========================================================
+// 🔥 FINAL & BULLETPROOF: runAutoPanel Function
+// =========================================================
+async function runAutoPanel(type = 'both') {
   const promptInput = $('promptInput');
   const statusBar = $('statusBar');
   const resultGrid = $('resultGrid');
@@ -1143,12 +1147,17 @@ async function runAutoPanel() {
   if (!promptInput || !statusBar) return alert("पेज रिफ्रेश करें");
 
   const prompt = promptInput.value.trim();
-  if (!prompt) return alert('⚠️ पहले "AI बैकग्राउंड / थीम प्रॉम्प्ट" वाले बॉक्स में पैटर्न का नाम लिखें!');
+  if (!prompt) {
+      return alert('⚠️ पहले "AI बैकग्राउंड / थीम प्रॉम्प्ट" वाले बॉक्स में पैटर्न का नाम लिखें!');
+  }
   
   if (typeof clearGrid === 'function') clearGrid();
   
+  let waitMsg = type === 'pattern' ? '⏳ सिर्फ चौकोर पैटर्न बन रहा है...' : 
+                (type === 'kurta' ? '⏳ सिर्फ कुर्ता मॉकअप बन रहा है...' : '⏳ दोनों डिज़ाइन बन रहे हैं (1-2 मिनट लग सकते हैं, पेज खुला रखें)...');
+
   statusBar.className = 'status'; 
-  statusBar.innerHTML = '<span class="spinner"></span> ⏳ चौकोर पैटर्न और कुर्ता मॉकअप दोनों बन रहे हैं... (कृपया 1 मिनट इंतज़ार करें)';
+  statusBar.innerHTML = `<span class="spinner"></span> ${waitMsg}`;
   statusBar.style.color = '#fbbf24';
 
   if (typeof toggleButtons === 'function') toggleButtons(true);
@@ -1157,7 +1166,7 @@ async function runAutoPanel() {
     const r = await fetch('/api/auto-panel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt, aspect: '2:3' }) // 2:3 कुर्ते के लिए
+      body: JSON.stringify({ prompt: prompt, aspect: '2:3', type: type }) 
     });
     
     // 🔥 चेक करें कि जवाब JSON है या नहीं (ताकि '<' वाला एरर न आए)
@@ -1174,17 +1183,17 @@ async function runAutoPanel() {
         throw new Error(data.error || "डिज़ाइन नहीं बन पाया");
     }
     
-    statusBar.innerHTML = '✅ दोनों डिज़ाइन तैयार हैं!';
+    statusBar.innerHTML = '✅ डिज़ाइन तैयार है!';
     statusBar.style.color = '#10b981';
     
-    // 🔥 दोनों इमेज को अलग-अलग कार्ड में दिखाएं
+    // 🔥 इमेज को कार्ड में दिखाएं
     if (typeof createThumbCard === 'function') {
-        // 1. चौकोर पैटर्न कार्ड (अगर बना है)
+        // 1. चौकोर पैटर्न कार्ड
         if (data.patternPreview) {
             $('resultGrid').appendChild(createThumbCard(data.patternPreview, data.patternPreview, null, '🔲 चौकोर पैटर्न (कपड़े पर छापने के लिए)', false));
         }
         
-        // 2. कुर्ता मॉकअप कार्ड (अगर बना है)
+        // 2. कुर्ता मॉकअप कार्ड
         if (data.kurtaPreview) {
             $('resultGrid').appendChild(createThumbCard(data.kurtaPreview, data.kurtaPreview, null, '👕 कुर्ता मॉकअप (क्लाइंट को दिखाने के लिए)', false));
         }
