@@ -1160,33 +1160,54 @@ async function runAutoPanel() {
       body: JSON.stringify({ prompt: prompt, aspect: '2:3' }) // 2:3 कुर्ते के लिए
     });
     
-    const data = await r.json();
-    if (data.error) throw new Error(data.error);
+    // 🔥 चेक करें कि जवाब JSON है या नहीं (ताकि '<' वाला एरर न आए)
+    const textResponse = await r.text();
+    let data;
+    try {
+        data = JSON.parse(textResponse);
+    } catch (parseError) {
+        throw new Error("सर्वर जवाब नहीं दे पाया (Timeout या Crash)। कृपया 1 मिनट बाद फिर कोशिश करें।");
+    }
+
+    // अगर सर्वर से एरर आया है
+    if (!data.success || data.error) {
+        throw new Error(data.error || "डिज़ाइन नहीं बन पाया");
+    }
     
     statusBar.innerHTML = '✅ दोनों डिज़ाइन तैयार हैं!';
     statusBar.style.color = '#10b981';
     
     // 🔥 दोनों इमेज को अलग-अलग कार्ड में दिखाएं
     if (typeof createThumbCard === 'function') {
-        // चौकोर पैटर्न कार्ड
-        $('resultGrid').appendChild(createThumbCard(data.patternPreview, data.patternPreview, null, '🔲 चौकोर पैटर्न (कपड़े पर छापने के लिए)', false));
+        // 1. चौकोर पैटर्न कार्ड (अगर बना है)
+        if (data.patternPreview) {
+            $('resultGrid').appendChild(createThumbCard(data.patternPreview, data.patternPreview, null, '🔲 चौकोर पैटर्न (कपड़े पर छापने के लिए)', false));
+        }
         
-        // कुर्ता मॉकअप कार्ड
-        $('resultGrid').appendChild(createThumbCard(data.kurtaPreview, data.kurtaPreview, null, '👕 कुर्ता मॉकअप (क्लाइंट को दिखाने के लिए)', false));
+        // 2. कुर्ता मॉकअप कार्ड (अगर बना है)
+        if (data.kurtaPreview) {
+            $('resultGrid').appendChild(createThumbCard(data.kurtaPreview, data.kurtaPreview, null, '👕 कुर्ता मॉकअप (क्लाइंट को दिखाने के लिए)', false));
+        }
     } else {
-        // बैकअप अगर createThumbCard न हो
-        resultGrid.innerHTML = `
-          <div style="text-align:center; padding: 10px; border: 1px solid #333; margin-bottom: 10px;">
-            <h4>🔲 चौकोर पैटर्न</h4>
-            <img src="${data.patternPreview}" style="max-width: 100%; border-radius: 8px;">
-            <br><a href="${data.patternPreview}" download="Pattern.png" class="btn small primary" style="margin-top:8px; text-decoration:none; display:inline-block;">⬇️ पैटर्न डाउनलोड</a>
-          </div>
-          <div style="text-align:center; padding: 10px; border: 1px solid #333;">
-            <h4>👕 कुर्ता मॉकअप</h4>
-            <img src="${data.kurtaPreview}" style="max-width: 100%; border-radius: 8px;">
-            <br><a href="${data.kurtaPreview}" download="Kurta_Mockup.png" class="btn small primary" style="margin-top:8px; text-decoration:none; display:inline-block;">⬇️ कुर्ता डाउनलोड</a>
-          </div>
-        `;
+        // बैकअप अगर createThumbCard फंक्शन न हो
+        let html = '';
+        if (data.patternPreview) {
+            html += `
+              <div style="text-align:center; padding: 10px; border: 1px solid #333; margin-bottom: 10px;">
+                <h4>🔲 चौकोर पैटर्न</h4>
+                <img src="${data.patternPreview}" style="max-width: 100%; border-radius: 8px;">
+                <br><a href="${data.patternPreview}" download="Pattern.png" class="btn small primary" style="margin-top:8px; text-decoration:none; display:inline-block;">⬇️ पैटर्न डाउनलोड</a>
+              </div>`;
+        }
+        if (data.kurtaPreview) {
+            html += `
+              <div style="text-align:center; padding: 10px; border: 1px solid #333;">
+                <h4>👕 कुर्ता मॉकअप</h4>
+                <img src="${data.kurtaPreview}" style="max-width: 100%; border-radius: 8px;">
+                <br><a href="${data.kurtaPreview}" download="Kurta_Mockup.png" class="btn small primary" style="margin-top:8px; text-decoration:none; display:inline-block;">⬇️ कुर्ता डाउनलोड</a>
+              </div>`;
+        }
+        resultGrid.innerHTML = html;
     }
 
   } catch (e) {
