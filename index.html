@@ -270,10 +270,18 @@
       <button class="tab-btn" onclick="openTab('tab-panel', this)">👕 पैटर्न पैनल</button>
 
     </div>
+    
 
     <div class="tab-content" id="tab-panel">
-      <p class="hint">ऑटोमैटिक पैटर्न बनाकर पूरे कुर्ते पर सेट करेगा</p>
-      <button class="btn primary large" onclick="runAutoPanel()">👕 ऑटो पैनल बनाएँ</button>
+  <p class="hint">ऑटोमैटिक पैटर्न बनाकर पूरे कुर्ते पर सेट करेगा</p>
+  
+  <!-- नए बटन: अलग-अलग काम करने के लिए ताकि सर्वर फ्री रहे -->
+  <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+      <button class="btn primary" style="flex:1;" onclick="runAutoPanel('pattern')">🔲 सिर्फ चौकोर पैटर्न</button>
+      <button class="btn primary" style="flex:1; background:#8b5cf6;" onclick="runAutoPanel('kurta')">👕 सिर्फ कुर्ता मॉकअप</button>
+  </div>
+
+  <button class="btn primary large" style="background:#fbbf24; color:#000;" onclick="runAutoPanel('both')">🚀 दोनों एक साथ बनाएँ</button>
     </div>
 
     <div id="tab-auto" class="tab-content active">
