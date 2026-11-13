@@ -1134,3 +1134,70 @@ async function runAutoPanel() {
     setStatus('✅ तैयार!', 'ok');
   } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
 }
+
+async function runAutoPanel() {
+  // 1. सबसे पहले चेक करें कि इनपुट और रिजल्ट बॉक्स मौजूद हैं या नहीं
+  const promptInput = $('promptInput');
+  const statusBar = $('statusBar');
+  const resultGrid = $('resultGrid');
+
+  if (!promptInput || !statusBar) {
+      alert("⚠️ तकनीकी खराबी: पेज के तत्व नहीं मिल रहे, कृपया पेज रिफ्रेश करें।");
+      return;
+  }
+
+  const prompt = promptInput.value.trim();
+  if (!prompt) {
+      alert('⚠️ पहले नीचे "AI बैकग्राउंड / थीम प्रॉम्प्ट" वाले बॉक्स में पैटर्न का नाम लिखें!');
+      return;
+  }
+  
+  // 2. बटन दबाते ही तुरंत स्क्रीन पर लोडिंग दिखाएं (ताकि पता चले बटन काम कर रहा है)
+  if (resultGrid) resultGrid.innerHTML = '';
+  if (typeof clearGrid === 'function') clearGrid();
+  
+  statusBar.className = 'status'; 
+  statusBar.innerHTML = '<span class="spinner"></span> ⏳ पैटर्न बन रहा है, कृपया 30-60 सेकंड इंतज़ार करें...';
+  statusBar.style.color = '#fbbf24';
+
+  if (typeof toggleButtons === 'function') toggleButtons(true); // सारे बटन बंद कर दें ताकि डबल क्लिक न हो
+  
+  try {
+    // 3. सर्वर को डेटा भेजें
+    const r = await fetch('/api/auto-panel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt, aspect: '2:3' })
+    });
+    
+    const data = await r.json();
+    
+    // अगर सर्वर से कोई एरर आया
+    if (data.error) throw new Error(data.error);
+    
+    // 4. रिजल्ट दिखाएं
+    statusBar.innerHTML = '✅ ऑटो पैनल तैयार!';
+    statusBar.style.color = '#10b981'; // हरा रंग
+    
+    if (typeof showThumb === 'function') {
+        showThumb(data.preview, '✅ ऑटो पैनल तैयार');
+    } else {
+        // अगर showThumb फंक्शन न हो तो सीधा इमेज दिखाएं
+        resultGrid.innerHTML = `
+          <div style="text-align:center; padding: 10px;">
+            <img src="${data.preview}" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);" alt="Auto Panel">
+            <br><br>
+            <a href="${data.preview}" download="Auto_Panel.png" class="btn small primary" style="text-decoration:none; padding:10px; display:inline-block;">⬇️ डाउनलोड करें</a>
+          </div>
+        `;
+    }
+
+  } catch (e) {
+    console.error("Auto Panel Error:", e);
+    // अगर सर्वर फेल हो जाए तो लाल रंग में एरर दिखाएं
+    statusBar.innerHTML = '❌ एरर: ' + e.message + ' (सर्वर जाग रहा हो सकता है, 1 मिनट बाद फिर कोशिश करें)';
+    statusBar.style.color = '#ef4444';
+  } finally {
+    if (typeof toggleButtons === 'function') toggleButtons(false); // बटन वापस चालू करें
+  }
+}
