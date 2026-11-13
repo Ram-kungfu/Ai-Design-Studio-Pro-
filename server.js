@@ -1206,22 +1206,58 @@ app.post('/api/background', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 🔥 NEW: AUTO PANEL GENERATOR ROUTE
+// 🔥 NEW: AUTO PANEL GENERATOR ROUTE (चौकोर पैटर्न + कुर्ता मॉकअप दोनों)
 app.post('/api/auto-panel', async (req, res) => {
   try {
     const { prompt = '', aspect = '2:3' } = req.body;
     
-    // 1. AI से एक छोटा पैटर्न बनवाएँ
-    const tileBuf = await callRecraftStabilityAPI(prompt, aspect);
+    if (!prompt) return res.status(400).json({ error: "कृपया पैटर्न का नाम (Prompt) लिखें" });
+
+    // ---------------------------------------------------------
+    // 1. चौकोर (Seamless) पैटर्न बनाना - कपड़े पर छापने के लिए
+    // ---------------------------------------------------------
+    const seamlessPrompt = `Seamless repeating textile pattern, tileable, flat vector style, ${prompt}. High resolution, edge-to-edge continuous print.`;
+    let patternBuf = null;
     
-    // 2. उसे पूरे कुर्ते के साइज़ (मान लीजिए 2000x3000) में दोहराएँ
-    const fullPattern = await createSeamlessPattern(tileBuf, 2000, 3000);
+    console.log("⏳ 1. चौकोर पैटर्न बन रहा है...");
+    try {
+      // पहले Gemini से कोशिश
+      patternBuf = await callGeminiImage(seamlessPrompt, '1:1');
+    } catch (err) {
+      console.log("Gemini से पैटर्न नहीं बना, Pollinations से कोशिश...");
+      // अगर Gemini फेल हो तो Pollinations से लें
+      patternBuf = await callRecraftStabilityAPI(seamlessPrompt, '1:1');
+    }
+
+    // ---------------------------------------------------------
+    // 2. कुर्ते का मॉकअप (Shape) बनाना - क्लाइंट को दिखाने के लिए
+    // ---------------------------------------------------------
+    const kurtaPrompt = `A professional textile print mockup of a men's kurta front panel. The base fabric is cream color. Apply this pattern: ${prompt}. The pattern should flow naturally around the neckline (V-neck) and shoulders. The sleeves and bottom hem should have heavy, dense motifs, while the upper chest area should be relatively lighter. Photorealistic, top-down flat lay view of the garment, high resolution, seamless edge-to-edge printing.`;
+    let kurtaBuf = null;
     
-    // (यहाँ हम चाहें तो इसे कुर्ते के शेप में काट सकते हैं, फिलहाल हम पूरा पैटर्न दे रहे हैं)
+    console.log("⏳ 2. कुर्ते का मॉकअप बन रहा है...");
+    try {
+      kurtaBuf = await callGeminiImage(kurtaPrompt, aspect);
+    } catch (err) {
+      console.log("Gemini से मॉकअप नहीं बना, Pollinations से कोशिश...");
+      kurtaBuf = await callRecraftStabilityAPI(kurtaPrompt, aspect);
+    }
+
+    // ---------------------------------------------------------
+    // 3. दोनों इमेज को सेव करना (300 DPI प्रिंट क्वालिटी)
+    // ---------------------------------------------------------
+    const patternUrl = saveOut(await withDpi(patternBuf, 300), 'auto_pattern_square');
+    const kurtaUrl = saveOut(await withDpi(kurtaBuf, 300), 'auto_kurta_mockup');
+
+    // दोनों का URL फ्रंटएंड को भेजें
+    res.json({ 
+      success: true, 
+      patternPreview: patternUrl, 
+      kurtaPreview: kurtaUrl 
+    });
     
-    const preview = saveOut(fullPattern, 'auto_panel');
-    res.json({ success: true, preview });
   } catch (e) {
+    console.error("Auto Panel Error:", e);
     res.status(500).json({ error: e.message });
   }
 });
