@@ -113,6 +113,26 @@ async function callGeminiImage(prompt, aspect = null) {
   throw lastErr;
 }
 
+// 🔥 ऑटोमैटिक पैटर्न रिपीटर (Seamless Tiling)
+async function createSeamlessPattern(tileBuffer, targetW, targetH) {
+  try {
+    const tile = await sharp(tileBuffer).resize(500, 500).toBuffer(); // पैटर्न का साइज़
+    const canvas = await sharp({
+      create: { width: targetW, height: targetH, channels: 3, background: { r: 255, g: 255, b: 255 } }
+    }).png().toBuffer();
+
+    const compositeArray = [];
+    for (let y = 0; y < targetH; y += 500) {
+      for (let x = 0; x < targetW; x += 500) {
+        compositeArray.push({ input: tile, left: x, top: y });
+      }
+    }
+    return await sharp(canvas).composite(compositeArray).png().toBuffer();
+  } catch (e) {
+    throw new Error("Pattern tiling failed: " + e.message);
+  }
+}
+
 // ================= AI FUNCTIONS =================
 
 // 1. Remove Background (Remove.bg)
@@ -1184,6 +1204,26 @@ app.post('/api/background', async (req, res) => {
     const preview = saveOut(out, 'bg');
     res.json({ success: true, preview });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// 🔥 NEW: AUTO PANEL GENERATOR ROUTE
+app.post('/api/auto-panel', async (req, res) => {
+  try {
+    const { prompt = '', aspect = '2:3' } = req.body;
+    
+    // 1. AI से एक छोटा पैटर्न बनवाएँ
+    const tileBuf = await callRecraftStabilityAPI(prompt, aspect);
+    
+    // 2. उसे पूरे कुर्ते के साइज़ (मान लीजिए 2000x3000) में दोहराएँ
+    const fullPattern = await createSeamlessPattern(tileBuf, 2000, 3000);
+    
+    // (यहाँ हम चाहें तो इसे कुर्ते के शेप में काट सकते हैं, फिलहाल हम पूरा पैटर्न दे रहे हैं)
+    
+    const preview = saveOut(fullPattern, 'auto_panel');
+    res.json({ success: true, preview });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // 7. AUTO VARIATIONS (5 नए डिज़ाइन - साइज़/उपयोग के हिसाब से अलग-अलग स्टाइल)
