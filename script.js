@@ -1114,3 +1114,23 @@ if (document.readyState === 'loading') {
     updateEditorText();
     ensureCardLauncher();
 }
+
+async function runAutoPanel() {
+  const prompt = $('promptInput').value;
+  if (!prompt) return alert('पहले पैटर्न का प्रॉम्प्ट लिखें');
+  
+  clearGrid(); setStatus('पैटर्न बन रहा है...'); toggleButtons(true);
+  
+  try {
+    const r = await fetch('/api/auto-panel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: prompt })
+    });
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    
+    showThumb(data.preview, '✅ ऑटो पैनल तैयार');
+    setStatus('✅ तैयार!', 'ok');
+  } catch (e) { setStatus('❌ ' + e.message, 'err'); } finally { toggleButtons(false); }
+}
