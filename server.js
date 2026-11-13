@@ -1206,62 +1206,91 @@ app.post('/api/background', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// 🔥 NEW: AUTO PANEL GENERATOR ROUTE (चौकोर पैटर्न + कुर्ता मॉकअप दोनों)
+// =========================================================
+// 🔥 FINAL & BULLETPROOF: AUTO PANEL GENERATOR ROUTE
+// (चौकोर पैटर्न + कुर्ता मॉकअप दोनों एक साथ)
+// =========================================================
 app.post('/api/auto-panel', async (req, res) => {
+  // यह सुनिश्चित करने के लिए कि अगर सर्वर में कोई भी एरर आए, तो ब्राउज़र को हमेशा JSON मिले (HTML नहीं)
+  res.setHeader('Content-Type', 'application/json');
+
   try {
     const { prompt = '', aspect = '2:3' } = req.body;
     
-    if (!prompt) return res.status(400).json({ error: "कृपया पैटर्न का नाम (Prompt) लिखें" });
+    if (!prompt || prompt.trim() === '') {
+      return res.status(400).json({ success: false, error: "कृपया पैटर्न का नाम (Prompt) लिखें" });
+    }
+
+    let patternBuf = null;
+    let kurtaBuf = null;
 
     // ---------------------------------------------------------
     // 1. चौकोर (Seamless) पैटर्न बनाना - कपड़े पर छापने के लिए
     // ---------------------------------------------------------
     const seamlessPrompt = `Seamless repeating textile pattern, tileable, flat vector style, ${prompt}. High resolution, edge-to-edge continuous print.`;
-    let patternBuf = null;
-    
     console.log("⏳ 1. चौकोर पैटर्न बन रहा है...");
+    
     try {
-      // पहले Gemini से कोशिश
       patternBuf = await callGeminiImage(seamlessPrompt, '1:1');
     } catch (err) {
-      console.log("Gemini से पैटर्न नहीं बना, Pollinations से कोशिश...");
-      // अगर Gemini फेल हो तो Pollinations से लें
-      patternBuf = await callRecraftStabilityAPI(seamlessPrompt, '1:1');
+      console.log("⚠️ Gemini से पैटर्न नहीं बना, Pollinations से कोशिश...");
+      try {
+        patternBuf = await callRecraftStabilityAPI(seamlessPrompt, '1:1');
+      } catch (err2) {
+        console.log("❌ पैटर्न बिल्कुल नहीं बना:", err2.message);
+      }
     }
 
     // ---------------------------------------------------------
     // 2. कुर्ते का मॉकअप (Shape) बनाना - क्लाइंट को दिखाने के लिए
     // ---------------------------------------------------------
     const kurtaPrompt = `A professional textile print mockup of a men's kurta front panel. The base fabric is cream color. Apply this pattern: ${prompt}. The pattern should flow naturally around the neckline (V-neck) and shoulders. The sleeves and bottom hem should have heavy, dense motifs, while the upper chest area should be relatively lighter. Photorealistic, top-down flat lay view of the garment, high resolution, seamless edge-to-edge printing.`;
-    let kurtaBuf = null;
-    
     console.log("⏳ 2. कुर्ते का मॉकअप बन रहा है...");
+    
     try {
       kurtaBuf = await callGeminiImage(kurtaPrompt, aspect);
     } catch (err) {
-      console.log("Gemini से मॉकअप नहीं बना, Pollinations से कोशिश...");
-      kurtaBuf = await callRecraftStabilityAPI(kurtaPrompt, aspect);
+      console.log("⚠️ Gemini से मॉकअप नहीं बना, Pollinations से कोशिश...");
+      try {
+        kurtaBuf = await callRecraftStabilityAPI(kurtaPrompt, aspect);
+      } catch (err2) {
+        console.log("❌ कुर्ता मॉकअप बिल्कुल नहीं बना:", err2.message);
+      }
     }
 
     // ---------------------------------------------------------
     // 3. दोनों इमेज को सेव करना (300 DPI प्रिंट क्वालिटी)
     // ---------------------------------------------------------
-    const patternUrl = saveOut(await withDpi(patternBuf, 300), 'auto_pattern_square');
-    const kurtaUrl = saveOut(await withDpi(kurtaBuf, 300), 'auto_kurta_mockup');
+    let patternUrl = null;
+    let kurtaUrl = null;
+
+    if (patternBuf && patternBuf.length > 1000) {
+      patternUrl = saveOut(await withDpi(patternBuf, 300), 'auto_pattern_square');
+    }
+    if (kurtaBuf && kurtaBuf.length > 1000) {
+      kurtaUrl = saveOut(await withDpi(kurtaBuf, 300), 'auto_kurta_mockup');
+    }
+
+    // अगर दोनों ही फेल हो जाएं तो यूज़र को साफ एरर दें
+    if (!patternUrl && !kurtaUrl) {
+      throw new Error("AI डिज़ाइन नहीं बना पाया। सर्वर व्यस्त हो सकता है, कृपया 1 मिनट बाद फिर कोशिश करें।");
+    }
 
     // दोनों का URL फ्रंटएंड को भेजें
-    res.json({ 
+    res.status(200).json({ 
       success: true, 
       patternPreview: patternUrl, 
       kurtaPreview: kurtaUrl 
     });
     
   } catch (e) {
-    console.error("Auto Panel Error:", e);
-    res.status(500).json({ error: e.message });
+    console.error("❌ Auto Panel Route Error:", e);
+    // अगर कोई भी अनजानी गलती हो, तो भी 200 OK के साथ JSON एरर भेजें ताकि ब्राउज़र क्रैश न हो
+    res.status(200).json({ success: false, error: e.message });
   }
 });
 
+    
 // 7. AUTO VARIATIONS (5 नए डिज़ाइन - साइज़/उपयोग के हिसाब से अलग-अलग स्टाइल)
 const STYLE_SETS = {
   default: [
