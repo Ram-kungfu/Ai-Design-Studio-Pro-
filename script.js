@@ -1136,68 +1136,64 @@ async function runAutoPanel() {
 }
 
 async function runAutoPanel() {
-  // 1. सबसे पहले चेक करें कि इनपुट और रिजल्ट बॉक्स मौजूद हैं या नहीं
   const promptInput = $('promptInput');
   const statusBar = $('statusBar');
   const resultGrid = $('resultGrid');
 
-  if (!promptInput || !statusBar) {
-      alert("⚠️ तकनीकी खराबी: पेज के तत्व नहीं मिल रहे, कृपया पेज रिफ्रेश करें।");
-      return;
-  }
+  if (!promptInput || !statusBar) return alert("पेज रिफ्रेश करें");
 
   const prompt = promptInput.value.trim();
-  if (!prompt) {
-      alert('⚠️ पहले नीचे "AI बैकग्राउंड / थीम प्रॉम्प्ट" वाले बॉक्स में पैटर्न का नाम लिखें!');
-      return;
-  }
+  if (!prompt) return alert('⚠️ पहले "AI बैकग्राउंड / थीम प्रॉम्प्ट" वाले बॉक्स में पैटर्न का नाम लिखें!');
   
-  // 2. बटन दबाते ही तुरंत स्क्रीन पर लोडिंग दिखाएं (ताकि पता चले बटन काम कर रहा है)
-  if (resultGrid) resultGrid.innerHTML = '';
   if (typeof clearGrid === 'function') clearGrid();
   
   statusBar.className = 'status'; 
-  statusBar.innerHTML = '<span class="spinner"></span> ⏳ पैटर्न बन रहा है, कृपया 30-60 सेकंड इंतज़ार करें...';
+  statusBar.innerHTML = '<span class="spinner"></span> ⏳ चौकोर पैटर्न और कुर्ता मॉकअप दोनों बन रहे हैं... (कृपया 1 मिनट इंतज़ार करें)';
   statusBar.style.color = '#fbbf24';
 
-  if (typeof toggleButtons === 'function') toggleButtons(true); // सारे बटन बंद कर दें ताकि डबल क्लिक न हो
+  if (typeof toggleButtons === 'function') toggleButtons(true);
   
   try {
-    // 3. सर्वर को डेटा भेजें
     const r = await fetch('/api/auto-panel', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt, aspect: '2:3' })
+      body: JSON.stringify({ prompt: prompt, aspect: '2:3' }) // 2:3 कुर्ते के लिए
     });
     
     const data = await r.json();
-    
-    // अगर सर्वर से कोई एरर आया
     if (data.error) throw new Error(data.error);
     
-    // 4. रिजल्ट दिखाएं
-    statusBar.innerHTML = '✅ ऑटो पैनल तैयार!';
-    statusBar.style.color = '#10b981'; // हरा रंग
+    statusBar.innerHTML = '✅ दोनों डिज़ाइन तैयार हैं!';
+    statusBar.style.color = '#10b981';
     
-    if (typeof showThumb === 'function') {
-        showThumb(data.preview, '✅ ऑटो पैनल तैयार');
+    // 🔥 दोनों इमेज को अलग-अलग कार्ड में दिखाएं
+    if (typeof createThumbCard === 'function') {
+        // चौकोर पैटर्न कार्ड
+        $('resultGrid').appendChild(createThumbCard(data.patternPreview, data.patternPreview, null, '🔲 चौकोर पैटर्न (कपड़े पर छापने के लिए)', false));
+        
+        // कुर्ता मॉकअप कार्ड
+        $('resultGrid').appendChild(createThumbCard(data.kurtaPreview, data.kurtaPreview, null, '👕 कुर्ता मॉकअप (क्लाइंट को दिखाने के लिए)', false));
     } else {
-        // अगर showThumb फंक्शन न हो तो सीधा इमेज दिखाएं
+        // बैकअप अगर createThumbCard न हो
         resultGrid.innerHTML = `
-          <div style="text-align:center; padding: 10px;">
-            <img src="${data.preview}" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);" alt="Auto Panel">
-            <br><br>
-            <a href="${data.preview}" download="Auto_Panel.png" class="btn small primary" style="text-decoration:none; padding:10px; display:inline-block;">⬇️ डाउनलोड करें</a>
+          <div style="text-align:center; padding: 10px; border: 1px solid #333; margin-bottom: 10px;">
+            <h4>🔲 चौकोर पैटर्न</h4>
+            <img src="${data.patternPreview}" style="max-width: 100%; border-radius: 8px;">
+            <br><a href="${data.patternPreview}" download="Pattern.png" class="btn small primary" style="margin-top:8px; text-decoration:none; display:inline-block;">⬇️ पैटर्न डाउनलोड</a>
+          </div>
+          <div style="text-align:center; padding: 10px; border: 1px solid #333;">
+            <h4>👕 कुर्ता मॉकअप</h4>
+            <img src="${data.kurtaPreview}" style="max-width: 100%; border-radius: 8px;">
+            <br><a href="${data.kurtaPreview}" download="Kurta_Mockup.png" class="btn small primary" style="margin-top:8px; text-decoration:none; display:inline-block;">⬇️ कुर्ता डाउनलोड</a>
           </div>
         `;
     }
 
   } catch (e) {
     console.error("Auto Panel Error:", e);
-    // अगर सर्वर फेल हो जाए तो लाल रंग में एरर दिखाएं
-    statusBar.innerHTML = '❌ एरर: ' + e.message + ' (सर्वर जाग रहा हो सकता है, 1 मिनट बाद फिर कोशिश करें)';
+    statusBar.innerHTML = '❌ एरर: ' + e.message;
     statusBar.style.color = '#ef4444';
   } finally {
-    if (typeof toggleButtons === 'function') toggleButtons(false); // बटन वापस चालू करें
+    if (typeof toggleButtons === 'function') toggleButtons(false);
   }
 }
