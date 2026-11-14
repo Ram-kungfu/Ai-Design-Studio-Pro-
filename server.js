@@ -1207,86 +1207,108 @@ app.post('/api/background', async (req, res) => {
 });
 
 // =========================================================
-// 🔥 FINAL & BULLETPROOF: AUTO PANEL GENERATOR ROUTE
-// (चौकोर पैटर्न + कुर्ता मॉकअप दोनों एक साथ)
+// 🔥 1. GEMINI VISION FUNCTION (Image + Text को समझने के लिए)
 // =========================================================
-app.post('/api/auto-panel', async (req, res) => {
-  // यह सुनिश्चित करने के लिए कि अगर सर्वर में कोई भी एरर आए, तो ब्राउज़र को हमेशा JSON मिले (HTML नहीं)
+async function generatePatternFromImage(refImageBuffer, promptText, aspect = '1:1') {
+  if (!KEYS.GEMINI) throw new Error('GEMINI_KEY नहीं मिली');
+  
+  const model = 'gemini-1.5-flash'; 
+  const base64Image = refImageBuffer.toString('base64');
+  
+  const prompt = `You are an expert textile designer. Look at this reference image carefully. The user wants a new design based on this reference. 
+  User's instruction: ${promptText}
+  Generate a high-quality, seamless textile pattern inspired by the reference image. Keep the color palette and style similar to the reference. Output only the generated image.`;
+
+  const payload = {
+    contents: [{
+      parts: [
+        { inline_data: { mime_type: "image/jpeg", data: base64Image } },
+        { text: prompt }
+      ]
+    }],
+    generationConfig: { responseModalities: ['TEXT', 'IMAGE'], imageConfig: { aspectRatio: aspect } }
+  };
+
+  const r = await axios.post(`${GEM_URL}${model}:generateContent`, payload, {
+    headers: { 'x-goog-api-key': KEYS.GEMINI, 'Content-Type': 'application/json' },
+    timeout: 90000
+  });
+
+  for (const cand of r.data.candidates || []) {
+    for (const part of cand.content?.parts || []) {
+      const inl = part.inlineData || part.inline_data;
+      if (inl?.data) return Buffer.from(inl.data, 'base64');
+    }
+  }
+  throw new Error('AI ने इमेज नहीं बनाई');
+}
+
+// =========================================================
+// 🔥 2. SMART AUTO PANEL ROUTE (सिर्फ यही एक राउट रखें)
+// =========================================================
+app.post('/api/auto-panel', upload.single('refImage'), async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
-
   try {
-    const { prompt = '', aspect = '2:3' } = req.body;
-    
-    if (!prompt || prompt.trim() === '') {
-      return res.status(400).json({ success: false, error: "कृपया पैटर्न का नाम (Prompt) लिखें" });
-    }
+    const { prompt = '', type = 'both', customItem = '' } = req.body;
+    if (!prompt) return res.status(400).json({ success: false, error: "कृपया पैटर्न का नाम लिखें" });
 
-    let patternBuf = null;
-    let kurtaBuf = null;
-
-    // ---------------------------------------------------------
-    // 1. चौकोर (Seamless) पैटर्न बनाना - कपड़े पर छापने के लिए
-    // ---------------------------------------------------------
-    const seamlessPrompt = `Seamless repeating textile pattern, tileable, flat vector style, ${prompt}. High resolution, edge-to-edge continuous print.`;
-    console.log("⏳ 1. चौकोर पैटर्न बन रहा है...");
-    
-    try {
-      patternBuf = await callGeminiImage(seamlessPrompt, '1:1');
-    } catch (err) {
-      console.log("⚠️ Gemini से पैटर्न नहीं बना, Pollinations से कोशिश...");
-      try {
-        patternBuf = await callRecraftStabilityAPI(seamlessPrompt, '1:1');
-      } catch (err2) {
-        console.log("❌ पैटर्न बिल्कुल नहीं बना:", err2.message);
-      }
-    }
-
-    // ---------------------------------------------------------
-    // 2. कुर्ते का मॉकअप (Shape) बनाना - क्लाइंट को दिखाने के लिए
-    // ---------------------------------------------------------
-    const kurtaPrompt = `A professional textile print mockup of a men's kurta front panel. The base fabric is cream color. Apply this pattern: ${prompt}. The pattern should flow naturally around the neckline (V-neck) and shoulders. The sleeves and bottom hem should have heavy, dense motifs, while the upper chest area should be relatively lighter. Photorealistic, top-down flat lay view of the garment, high resolution, seamless edge-to-edge printing.`;
-    console.log("⏳ 2. कुर्ते का मॉकअप बन रहा है...");
-    
-    try {
-      kurtaBuf = await callGeminiImage(kurtaPrompt, aspect);
-    } catch (err) {
-      console.log("⚠️ Gemini से मॉकअप नहीं बना, Pollinations से कोशिश...");
-      try {
-        kurtaBuf = await callRecraftStabilityAPI(kurtaPrompt, aspect);
-      } catch (err2) {
-        console.log("❌ कुर्ता मॉकअप बिल्कुल नहीं बना:", err2.message);
-      }
-    }
-
-    // ---------------------------------------------------------
-    // 3. दोनों इमेज को सेव करना (300 DPI प्रिंट क्वालिटी)
-    // ---------------------------------------------------------
+    const refImageBuf = req.file ? fs.readFileSync(req.file.path) : null;
     let patternUrl = null;
     let kurtaUrl = null;
 
-    if (patternBuf && patternBuf.length > 1000) {
-      patternUrl = saveOut(await withDpi(patternBuf, 300), 'auto_pattern_square');
-    }
-    if (kurtaBuf && kurtaBuf.length > 1000) {
-      kurtaUrl = saveOut(await withDpi(kurtaBuf, 300), 'auto_kurta_mockup');
+    // 1. चौकोर पैटर्न बनाना
+    if (type === 'pattern' || type === 'both') {
+      let pBuf = null;
+      try {
+        if (refImageBuf) {
+           pBuf = await generatePatternFromImage(refImageBuf, `Create a seamless pattern like this: ${prompt}`, '1:1');
+        } else {
+           const seamlessPrompt = `Seamless repeating textile pattern, tileable, vibrant colors, ${prompt}.`;
+           pBuf = await callGeminiImage(seamlessPrompt, '1:1');
+        }
+      } catch (e) { 
+        const fallbackPrompt = `Seamless repeating textile pattern, ${prompt}`;
+        pBuf = await callRecraftStabilityAPI(fallbackPrompt, '1:1'); 
+      }
+      
+      // अगर इमेज सही बनी है (साइज़ 5000 बाइट्स से बड़ी है) तभी सेव करें
+      if (pBuf && pBuf.length > 5000) {
+        patternUrl = saveOut(await withDpi(pBuf, 300), 'auto_pattern');
+      }
     }
 
-    // अगर दोनों ही फेल हो जाएं तो यूज़र को साफ एरर दें
+    // 2. कुर्ते/कपड़े का मॉकअप बनाना
+    if (type === 'kurta' || type === 'both') {
+      const itemToMockup = customItem.trim() !== '' ? customItem : "the garment described in the pattern";
+      const mockupPrompt = `A photorealistic top-down flat lay mockup of a ${itemToMockup}. Apply the pattern: ${prompt}. The pattern should perfectly wrap around the shape, seams, and borders. High resolution, professional textile print mockup.`;
+      
+      let kBuf = null;
+      try { 
+          if (refImageBuf) {
+              kBuf = await generatePatternFromImage(refImageBuf, mockupPrompt, '2:3');
+          } else {
+              kBuf = await callGeminiImage(mockupPrompt, '2:3'); 
+          }
+      } catch (e) { 
+          kBuf = await callRecraftStabilityAPI(mockupPrompt, '2:3'); 
+      }
+      
+      // अगर मॉकअप इमेज सही बनी है
+      if (kBuf && kBuf.length > 5000) {
+        kurtaUrl = saveOut(await withDpi(kBuf, 300), 'auto_mockup');
+      }
+    }
+
+    // अगर दोनों ही इमेज नहीं बनीं, तो साफ एरर दें
     if (!patternUrl && !kurtaUrl) {
       throw new Error("AI डिज़ाइन नहीं बना पाया। सर्वर व्यस्त हो सकता है, कृपया 1 मिनट बाद फिर कोशिश करें।");
     }
 
-    // दोनों का URL फ्रंटएंड को भेजें
-    res.status(200).json({ 
-      success: true, 
-      patternPreview: patternUrl, 
-      kurtaPreview: kurtaUrl 
-    });
-    
+    res.status(200).json({ success: true, patternPreview: patternUrl, kurtaPreview: kurtaUrl });
   } catch (e) {
-    console.error("❌ Auto Panel Route Error:", e);
-    // अगर कोई भी अनजानी गलती हो, तो भी 200 OK के साथ JSON एरर भेजें ताकि ब्राउज़र क्रैश न हो
     res.status(200).json({ success: false, error: e.message });
+  } finally {
+    if (req.file) rmFile(req.file.path);
   }
 });
 
