@@ -272,14 +272,29 @@
     </div>
     
 
-    <div class="tab-content" id="tab-panel">
+    <div id="tab-panel" class="tab-content">
   <p class="hint">ऑटोमैटिक पैटर्न बनाकर पूरे कुर्ते पर सेट करेगा</p>
   
-  <!-- नए बटन: अलग-अलग काम करने के लिए ताकि सर्वर फ्री रहे -->
+  <!-- 🔥 1. क्लाइंट की इमेज अपलोड करने के लिए -->
+  <div style="margin-bottom: 10px; background: #1e293b; padding: 10px; border-radius: 8px; border: 1px solid #334155;">
+    <label style="color:#fbbf24; font-size: 12px; font-weight: bold; display: block; margin-bottom: 5px;">📸 क्लाइंट की रेफरेंस इमेज (ऑप्शनल):</label>
+    <input type="file" id="panelRefImage" accept="image/*" style="width: 100%; padding: 8px; background: #0f172a; color: white; border-radius: 6px; border: none;">
+  </div>
+
+  <!-- 🔥 2. कस्टम आइटम का बॉक्स (किस चीज़ का मॉकअप चाहिए) -->
+  <div style="margin-bottom: 10px; background: #1e293b; padding: 10px; border-radius: 8px; border: 1px solid #334155;">
+      <label style="color:#fbbf24; font-size: 12px; font-weight: bold; display: block; margin-bottom: 5px;">👕 किस चीज़ का मॉकअप चाहिए?</label>
+      <input type="text" id="customItem" placeholder="जैसे: Shirt, Pant, Saree..." style="width: 100%; padding: 8px; border-radius: 6px; border: none; background: #0f172a; color: white; font-size: 13px;">
+  </div>
+
+  <!-- 🔥 3. तीनों बटन -->
   <div style="display: flex; gap: 10px; margin-bottom: 10px;">
       <button class="btn primary" style="flex:1;" onclick="runAutoPanel('pattern')">🔲 सिर्फ चौकोर पैटर्न</button>
-      <button class="btn primary" style="flex:1; background:#8b5cf6;" onclick="runAutoPanel('kurta')">👕 सिर्फ कुर्ता मॉकअप</button>
+      <button class="btn primary" style="flex:1; background:#8b5cf6;" onclick="runAutoPanel('kurta')">👕 सिर्फ मॉकअप</button>
   </div>
+  <button class="btn primary large" style="background:#fbbf24; color:#000; width: 100%;" onclick="runAutoPanel('both')">🚀 दोनों एक साथ बनाएँ</button>
+    </div>
+    
 
   <button class="btn primary large" style="background:#fbbf24; color:#000;" onclick="runAutoPanel('both')">🚀 दोनों एक साथ बनाएँ</button>
     </div>
