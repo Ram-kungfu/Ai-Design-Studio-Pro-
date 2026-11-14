@@ -1142,11 +1142,13 @@ async function runAutoPanel() {
 async function runAutoPanel(type = 'both') {
   const promptInput = $('promptInput');
   const statusBar = $('statusBar');
-  const resultGrid = $('resultGrid');
-
+  
   if (!promptInput || !statusBar) return alert("पेज रिफ्रेश करें");
 
   const prompt = promptInput.value.trim();
+  const customItem = $('customItem') ? $('customItem').value.trim() : '';
+  const refImageFile = $('panelRefImage') && $('panelRefImage').files[0] ? $('panelRefImage').files[0] : null;
+
   if (!prompt) {
       return alert('⚠️ पहले "AI बैकग्राउंड / थीम प्रॉम्प्ट" वाले बॉक्स में पैटर्न का नाम लिखें!');
   }
@@ -1154,7 +1156,7 @@ async function runAutoPanel(type = 'both') {
   if (typeof clearGrid === 'function') clearGrid();
   
   let waitMsg = type === 'pattern' ? '⏳ सिर्फ चौकोर पैटर्न बन रहा है...' : 
-                (type === 'kurta' ? '⏳ सिर्फ कुर्ता मॉकअप बन रहा है...' : '⏳ दोनों डिज़ाइन बन रहे हैं (1-2 मिनट लग सकते हैं, पेज खुला रखें)...');
+                (type === 'kurta' ? '⏳ सिर्फ मॉकअप बन रहा है...' : '⏳ दोनों डिज़ाइन बन रहे हैं (1-2 मिनट लग सकते हैं, पेज खुला रखें)...');
 
   statusBar.className = 'status'; 
   statusBar.innerHTML = `<span class="spinner"></span> ${waitMsg}`;
@@ -1163,39 +1165,49 @@ async function runAutoPanel(type = 'both') {
   if (typeof toggleButtons === 'function') toggleButtons(true);
   
   try {
-    const r = await fetch('/api/auto-panel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: prompt, aspect: '2:3', type: type }) 
-    });
+    // 🔥 FormData का इस्तेमाल करें ताकि इमेज भी भेजी जा सके
+    const fd = new FormData();
+    fd.append('prompt', prompt);
+    fd.append('type', type);
+    fd.append('customItem', customItem);
     
-    // 🔥 चेक करें कि जवाब JSON है या नहीं (ताकि '<' वाला एरर न आए)
-    const textResponse = await r.text();
-    let data;
-    try {
-        data = JSON.parse(textResponse);
-    } catch (parseError) {
-        throw new Error("सर्वर जवाब नहीं दे पाया (Timeout या Crash)। कृपया 1 मिनट बाद फिर कोशिश करें।");
+    // अगर क्लाइंट की इमेज अपलोड की गई है तो उसे भी साथ भेजें
+    if (refImageFile) {
+        fd.append('refImage', refImageFile);
     }
 
-    // अगर सर्वर से एरर आया है
+    const r = await fetch('/api/auto-panel', { method: 'POST', body: fd });
+    
+    // 🔥 सर्वर क्रैश या टाइमआउट होने पर '<' वाला एरर न आए, इसके लिए टेक्स्ट पढ़कर JSON बनाएं
+    const textResponse = await r.text();
+    let data;
+    try { 
+        data = JSON.parse(textResponse); 
+    } catch (e) { 
+        throw new Error("सर्वर जवाब नहीं दे पाया (Timeout या Crash)। कृपया 1 मिनट बाद फिर कोशिश करें।"); 
+    }
+
     if (!data.success || data.error) {
         throw new Error(data.error || "डिज़ाइन नहीं बन पाया");
+    }
+
+    if (!data.patternPreview && !data.kurtaPreview) {
+        throw new Error("AI ने कोई भी इमेज नहीं बनाई। कृपया प्रॉम्प्ट बदलकर दोबारा कोशिश करें।");
     }
     
     statusBar.innerHTML = '✅ डिज़ाइन तैयार है!';
     statusBar.style.color = '#10b981';
     
-    // 🔥 इमेज को कार्ड में दिखाएं
+    // इमेज को कार्ड में दिखाएं
     if (typeof createThumbCard === 'function') {
         // 1. चौकोर पैटर्न कार्ड
         if (data.patternPreview) {
-            $('resultGrid').appendChild(createThumbCard(data.patternPreview, data.patternPreview, null, '🔲 चौकोर पैटर्न (कपड़े पर छापने के लिए)', false));
+            $('resultGrid').appendChild(createThumbCard(data.patternPreview, data.patternPreview, null, '🔲 चौकोर पैटर्न (प्रिंटर के लिए)', false));
         }
         
-        // 2. कुर्ता मॉकअप कार्ड
+        // 2. मॉकअप कार्ड
         if (data.kurtaPreview) {
-            $('resultGrid').appendChild(createThumbCard(data.kurtaPreview, data.kurtaPreview, null, '👕 कुर्ता मॉकअप (क्लाइंट को दिखाने के लिए)', false));
+            $('resultGrid').appendChild(createThumbCard(data.kurtaPreview, data.kurtaPreview, null, '👕 मॉकअप (क्लाइंट को दिखाने के लिए)', false));
         }
     } else {
         // बैकअप अगर createThumbCard फंक्शन न हो
@@ -1211,9 +1223,9 @@ async function runAutoPanel(type = 'both') {
         if (data.kurtaPreview) {
             html += `
               <div style="text-align:center; padding: 10px; border: 1px solid #333;">
-                <h4>👕 कुर्ता मॉकअप</h4>
+                <h4>👕 मॉकअप</h4>
                 <img src="${data.kurtaPreview}" style="max-width: 100%; border-radius: 8px;">
-                <br><a href="${data.kurtaPreview}" download="Kurta_Mockup.png" class="btn small primary" style="margin-top:8px; text-decoration:none; display:inline-block;">⬇️ कुर्ता डाउनलोड</a>
+                <br><a href="${data.kurtaPreview}" download="Mockup.png" class="btn small primary" style="margin-top:8px; text-decoration:none; display:inline-block;">⬇️ मॉकअप डाउनलोड</a>
               </div>`;
         }
         resultGrid.innerHTML = html;
